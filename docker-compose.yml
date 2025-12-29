@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: betterdb-monitor-valkey
+    ports:
+      - "6380:6379"
+    command: valkey-server --requirepass devpassword
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    container_name: betterdb-monitor-redis
+    ports:
+      - "6381:6379"
+    command: redis-server --requirepass devpassword
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
