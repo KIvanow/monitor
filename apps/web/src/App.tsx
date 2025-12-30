@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { metricsApi } from './api/metrics';
 import { CapabilitiesContext } from './hooks/useCapabilities';
 import { Dashboard } from './pages/Dashboard';
@@ -6,10 +7,7 @@ import { SlowLog } from './pages/SlowLog';
 import { Clients } from './pages/Clients';
 import type { DatabaseCapabilities } from './types/metrics';
 
-type Page = 'dashboard' | 'slowlog' | 'clients';
-
 function App() {
-  const [page, setPage] = useState<Page>('dashboard');
   const [capabilities, setCapabilities] = useState<DatabaseCapabilities | null>(null);
 
   useEffect(() => {
@@ -23,55 +21,67 @@ function App() {
   }, []);
 
   return (
-    <CapabilitiesContext.Provider value={capabilities}>
-      <div className="min-h-screen bg-background">
-        <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-card">
-          <div className="p-6">
-            <h2 className="text-lg font-semibold">BetterDB Monitor</h2>
-          </div>
-          <nav className="space-y-1 px-3">
-            <NavItem active={page === 'dashboard'} onClick={() => setPage('dashboard')}>
-              Dashboard
-            </NavItem>
-            <NavItem active={page === 'slowlog'} onClick={() => setPage('slowlog')}>
-              Slow Log
-            </NavItem>
-            <NavItem active={page === 'clients'} onClick={() => setPage('clients')}>
-              Clients
-            </NavItem>
-          </nav>
-        </aside>
+    <BrowserRouter>
+      <CapabilitiesContext.Provider value={capabilities}>
+        <AppLayout />
+      </CapabilitiesContext.Provider>
+    </BrowserRouter>
+  );
+}
 
-        <main className="pl-64">
-          <div className="p-8">
-            {page === 'dashboard' && <Dashboard />}
-            {page === 'slowlog' && <SlowLog />}
-            {page === 'clients' && <Clients />}
-          </div>
-        </main>
-      </div>
-    </CapabilitiesContext.Provider>
+function AppLayout() {
+  const location = useLocation();
+
+  return (
+    <div className="min-h-screen bg-background">
+      <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-card">
+        <div className="p-6">
+          <h2 className="text-lg font-semibold">BetterDB Monitor</h2>
+        </div>
+        <nav className="space-y-1 px-3">
+          <NavItem to="/" active={location.pathname === '/'}>
+            Dashboard
+          </NavItem>
+          <NavItem to="/slowlog" active={location.pathname === '/slowlog'}>
+            Slow Log
+          </NavItem>
+          <NavItem to="/clients" active={location.pathname === '/clients'}>
+            Clients
+          </NavItem>
+        </nav>
+      </aside>
+
+      <main className="pl-64">
+        <div className="p-8">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/slowlog" element={<SlowLog />} />
+            <Route path="/clients" element={<Clients />} />
+          </Routes>
+        </div>
+      </main>
+    </div>
   );
 }
 
 interface NavItemProps {
   children: React.ReactNode;
   active: boolean;
-  onClick: () => void;
+  to: string;
 }
 
-function NavItem({ children, active, onClick }: NavItemProps) {
+function NavItem({ children, active, to }: NavItemProps) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+    <Link
+      to={to}
+      className={`block w-full rounded-md px-3 py-2 text-sm transition-colors ${
         active
           ? 'bg-primary text-primary-foreground'
           : 'hover:bg-muted'
       }`}
     >
       {children}
-    </button>
+    </Link>
   );
 }
 

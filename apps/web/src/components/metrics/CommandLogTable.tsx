@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   Table,
   TableBody,
@@ -13,16 +12,11 @@ import type { CommandLogEntry, CommandLogType } from '../../types/metrics';
 
 interface Props {
   entries: Record<CommandLogType, CommandLogEntry[]>;
+  activeTab?: CommandLogType;
   onTabChange?: (type: CommandLogType) => void;
 }
 
-export function CommandLogTable({ entries, onTabChange }: Props) {
-  const [activeType, setActiveType] = useState<CommandLogType>('slow');
-
-  const handleTabChange = (type: CommandLogType) => {
-    setActiveType(type);
-    onTabChange?.(type);
-  };
+export function CommandLogTable({ entries, activeTab = 'slow', onTabChange }: Props) {
 
   const formatDuration = (duration: number) => {
     if (duration < 1000) return `${duration}µs`;
@@ -30,13 +24,13 @@ export function CommandLogTable({ entries, onTabChange }: Props) {
     return `${(duration / 1000000).toFixed(2)}s`;
   };
 
-  const currentEntries = entries[activeType] || [];
+  const currentEntries = entries[activeTab] || [];
 
   return (
     <div>
       <div className="flex items-center gap-4 mb-4">
         <Badge variant="outline">Valkey 8.1+</Badge>
-        <Tabs value={activeType} onValueChange={(value) => handleTabChange(value as CommandLogType)}>
+        <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as CommandLogType)}>
           <TabsList>
             <TabsTrigger value="slow">
               Slow
