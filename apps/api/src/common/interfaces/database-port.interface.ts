@@ -1,8 +1,30 @@
+import {
+  InfoResponse,
+  SlowLogEntry,
+  CommandLogEntry,
+  CommandLogType,
+  LatencyEvent,
+  LatencyHistoryEntry,
+  LatencyHistogram,
+  MemoryStats,
+  ClientInfo,
+  ClientFilters,
+  AclLogEntry,
+  RoleInfo,
+  ClusterNode,
+  SlotStats,
+  ConfigGetResponse,
+} from '../types/metrics.types';
+
 export interface DatabaseCapabilities {
   dbType: 'valkey' | 'redis';
   version: string;
   hasCommandLog: boolean;
   hasSlotStats: boolean;
+  hasClusterSlotStats: boolean;
+  hasLatencyMonitor: boolean;
+  hasAclLog: boolean;
+  hasMemoryDoctor: boolean;
 }
 
 export interface DatabasePort {
@@ -12,4 +34,30 @@ export interface DatabasePort {
   ping(): Promise<boolean>;
   getInfo(sections?: string[]): Promise<Record<string, unknown>>;
   getCapabilities(): DatabaseCapabilities;
+  getInfoParsed(sections?: string[]): Promise<InfoResponse>;
+  getSlowLog(count?: number): Promise<SlowLogEntry[]>;
+  getSlowLogLength(): Promise<number>;
+  resetSlowLog(): Promise<void>;
+  getCommandLog(count?: number, type?: CommandLogType): Promise<CommandLogEntry[]>;
+  getCommandLogLength(type?: CommandLogType): Promise<number>;
+  resetCommandLog(type?: CommandLogType): Promise<void>;
+  getLatestLatencyEvents(): Promise<LatencyEvent[]>;
+  getLatencyHistory(eventName: string): Promise<LatencyHistoryEntry[]>;
+  getLatencyHistogram(commands?: string[]): Promise<Record<string, LatencyHistogram>>;
+  resetLatencyEvents(eventName?: string): Promise<void>;
+  getMemoryStats(): Promise<MemoryStats>;
+  getMemoryDoctor(): Promise<string>;
+  getClients(filters?: ClientFilters): Promise<ClientInfo[]>;
+  getClientById(id: string): Promise<ClientInfo | null>;
+  killClient(filters: ClientFilters): Promise<number>;
+  getAclLog(count?: number): Promise<AclLogEntry[]>;
+  resetAclLog(): Promise<void>;
+  getRole(): Promise<RoleInfo>;
+  getClusterInfo(): Promise<Record<string, string>>;
+  getClusterNodes(): Promise<ClusterNode[]>;
+  getClusterSlotStats(orderBy?: 'key-count' | 'cpu-usec', limit?: number): Promise<SlotStats>;
+  getConfigValue(parameter: string): Promise<string | null>;
+  getConfigValues(pattern: string): Promise<ConfigGetResponse>;
+  getDbSize(): Promise<number>;
+  getLastSaveTime(): Promise<number>;
 }

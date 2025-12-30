@@ -3,6 +3,10 @@ export interface DatabaseCapabilities {
   version: string;
   hasCommandLog: boolean;
   hasSlotStats: boolean;
+  hasClusterSlotStats: boolean;
+  hasLatencyMonitor: boolean;
+  hasAclLog: boolean;
+  hasMemoryDoctor: boolean;
 }
 
 export interface HealthResponse {
