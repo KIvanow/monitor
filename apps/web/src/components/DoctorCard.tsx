@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle } from 'lucide-react';
+import { Fragment, ReactNode } from 'react';
 
 export interface DoctorCardProps {
   title: string;
@@ -6,16 +7,52 @@ export interface DoctorCardProps {
   isLoading: boolean;
 }
 
-function highlightReport(report: string): string {
-  return report
-    .replace(
-      /(High fragmentation|latency spikes?|too slow|advices? for you|blocked|blocking|WARNING|ERROR)/gi,
-      '<span class="text-red-600 font-semibold">$1</span>'
-    )
-    .replace(
-      /(CONFIG SET [^\n]+)/g,
-      '<code class="bg-blue-100 text-blue-700 px-1 rounded">$1</code>'
-    );
+const WARNING_PATTERN = /(High fragmentation|latency spikes?|too slow|advices? for you|blocked|blocking|WARNING|ERROR)/gi;
+const CONFIG_PATTERN = /(CONFIG SET [^\n]+)/g;
+
+function highlightText(text: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    WARNING_PATTERN.lastIndex = 0;
+    CONFIG_PATTERN.lastIndex = 0;
+
+    const warningMatch = WARNING_PATTERN.exec(remaining);
+    const configMatch = CONFIG_PATTERN.exec(remaining);
+
+    const matches = [warningMatch, configMatch].filter(Boolean) as RegExpExecArray[];
+    if (matches.length === 0) {
+      parts.push(<Fragment key={key}>{remaining}</Fragment>);
+      break;
+    }
+
+    const firstMatch = matches.reduce((a, b) => (a.index < b.index ? a : b));
+    const isWarning = firstMatch === warningMatch;
+
+    if (firstMatch.index > 0) {
+      parts.push(<Fragment key={key++}>{remaining.slice(0, firstMatch.index)}</Fragment>);
+    }
+
+    if (isWarning) {
+      parts.push(
+        <span key={key++} className="text-red-600 font-semibold">
+          {firstMatch[0]}
+        </span>
+      );
+    } else {
+      parts.push(
+        <code key={key++} className="bg-blue-100 text-blue-700 px-1 rounded">
+          {firstMatch[0]}
+        </code>
+      );
+    }
+
+    remaining = remaining.slice(firstMatch.index + firstMatch[0].length);
+  }
+
+  return parts;
 }
 
 export function DoctorCard({ title, report, isLoading }: DoctorCardProps) {
@@ -51,18 +88,15 @@ export function DoctorCard({ title, report, isLoading }: DoctorCardProps) {
     );
   }
 
-  const highlighted = highlightReport(report);
-
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
       <div className="flex items-center gap-2 text-amber-700 mb-2">
         <AlertTriangle className="h-5 w-5" />
         <span className="font-medium">{title}</span>
       </div>
-      <pre
-        className="mt-2 whitespace-pre-wrap text-sm text-gray-700 font-mono overflow-x-auto"
-        dangerouslySetInnerHTML={{ __html: highlighted }}
-      />
+      <pre className="mt-2 whitespace-pre-wrap text-sm text-gray-700 font-mono overflow-x-auto">
+        {highlightText(report)}
+      </pre>
     </div>
   );
 }

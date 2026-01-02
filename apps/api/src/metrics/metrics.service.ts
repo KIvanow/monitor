@@ -81,6 +81,10 @@ export class MetricsService {
     return this.dbClient.resetLatencyEvents(eventName);
   }
 
+  async getLatencyDoctor(): Promise<string> {
+    return this.dbClient.getLatencyDoctor();
+  }
+
   async getMemoryStats(): Promise<MemoryStats> {
     return this.dbClient.getMemoryStats();
   }
