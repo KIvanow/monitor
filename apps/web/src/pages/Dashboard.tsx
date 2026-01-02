@@ -6,6 +6,7 @@ import { OverviewCards } from '../components/dashboard/OverviewCards';
 import { MemoryChart } from '../components/dashboard/MemoryChart';
 import { OpsChart } from '../components/dashboard/OpsChart';
 import { CapabilitiesBadges } from '../components/dashboard/CapabilitiesBadges';
+import { DoctorCard } from '../components/DoctorCard';
 
 export function Dashboard() {
   const { data: health, loading: healthLoading } = usePolling({
@@ -20,6 +21,8 @@ export function Dashboard() {
 
   const [memoryHistory, setMemoryHistory] = useState<Array<{ time: string; used: number; peak: number }>>([]);
   const [opsHistory, setOpsHistory] = useState<Array<{ time: string; ops: number }>>([]);
+  const [memoryDoctorReport, setMemoryDoctorReport] = useState<string>();
+  const [memoryDoctorLoading, setMemoryDoctorLoading] = useState(true);
 
   useEffect(() => {
     if (!info?.memory || !info?.stats) return;
@@ -41,6 +44,13 @@ export function Dashboard() {
     });
   }, [info]);
 
+  useEffect(() => {
+    metricsApi.getMemoryDoctor()
+      .then(data => setMemoryDoctorReport(data.report))
+      .catch(console.error)
+      .finally(() => setMemoryDoctorLoading(false));
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -53,6 +63,12 @@ export function Dashboard() {
       </div>
 
       <OverviewCards info={info} />
+
+      <DoctorCard
+        title="Memory Doctor"
+        report={memoryDoctorReport}
+        isLoading={memoryDoctorLoading}
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         <MemoryChart data={memoryHistory} />

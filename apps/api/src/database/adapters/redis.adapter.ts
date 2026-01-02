@@ -107,6 +107,10 @@ export class RedisAdapter implements DatabasePort {
     throw new Error('Redis adapter not yet implemented');
   }
 
+  async getLatencyDoctor(): Promise<string> {
+    throw new Error('Redis adapter not yet implemented');
+  }
+
   async getMemoryStats(): Promise<MemoryStats> {
     throw new Error('Redis adapter not yet implemented');
   }

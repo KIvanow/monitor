@@ -270,6 +270,10 @@ export class ValkeyAdapter implements DatabasePort {
     }
   }
 
+  async getLatencyDoctor(): Promise<string> {
+    return (await this.client.call('LATENCY', 'DOCTOR')) as string;
+  }
+
   async getMemoryStats(): Promise<MemoryStats> {
     const rawStats = await this.client.call('MEMORY', 'STATS');
     return MetricsParser.parseMemoryStats(rawStats as Record<string, unknown>) as MemoryStats;

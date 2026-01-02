@@ -45,6 +45,7 @@ export interface DatabasePort {
   getLatencyHistory(eventName: string): Promise<LatencyHistoryEntry[]>;
   getLatencyHistogram(commands?: string[]): Promise<Record<string, LatencyHistogram>>;
   resetLatencyEvents(eventName?: string): Promise<void>;
+  getLatencyDoctor(): Promise<string>;
   getMemoryStats(): Promise<MemoryStats>;
   getMemoryDoctor(): Promise<string>;
   getClients(filters?: ClientFilters): Promise<ClientInfo[]>;

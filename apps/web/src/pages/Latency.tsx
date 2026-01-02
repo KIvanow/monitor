@@ -4,6 +4,7 @@ import { usePolling } from '../hooks/usePolling';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import { DoctorCard } from '../components/DoctorCard';
 import type { LatencyHistoryEntry } from '../types/metrics';
 
 const EVENTS_POLL_INTERVAL_MS = 10_000;
@@ -31,6 +32,8 @@ export function Latency() {
   const [historyData, setHistoryData] = useState<LatencyHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [doctorReport, setDoctorReport] = useState<string>();
+  const [doctorLoading, setDoctorLoading] = useState(true);
 
   const { data: latencyEvents } = usePolling({
     fetcher: metricsApi.getLatencyLatest,
@@ -52,6 +55,13 @@ export function Latency() {
         .finally(() => setHistoryLoading(false));
     }
   }, [selectedEvent]);
+
+  useEffect(() => {
+    metricsApi.getLatencyDoctor()
+      .then(data => setDoctorReport(data.report))
+      .catch(console.error)
+      .finally(() => setDoctorLoading(false));
+  }, []);
 
   const formatLatency = (latency: number) => {
     if (latency < 1000) return `${latency}µs`;
@@ -127,6 +137,12 @@ export function Latency() {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Latency Monitoring</h1>
+
+      <DoctorCard
+        title="Latency Doctor"
+        report={doctorReport}
+        isLoading={doctorLoading}
+      />
 
       <Card>
         <CardHeader>

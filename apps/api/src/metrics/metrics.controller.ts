@@ -162,6 +162,19 @@ export class MetricsController {
     }
   }
 
+  @Get('latency/doctor')
+  async getLatencyDoctor(): Promise<{ report: string }> {
+    try {
+      const report = await this.metricsService.getLatencyDoctor();
+      return { report };
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get latency doctor report: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Delete('latency')
   async resetLatencyEvents(@Query('eventName') eventName?: string): Promise<{ success: boolean }> {
     try {

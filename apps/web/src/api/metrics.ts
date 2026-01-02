@@ -40,4 +40,6 @@ export const metricsApi = {
     fetchApi<SlotStats>(`/metrics/cluster/slot-stats?orderBy=${orderBy}&limit=${limit}`),
   getDbSize: () => fetchApi<{ size: number }>('/metrics/dbsize'),
   getRole: () => fetchApi<{ role: string; replicationOffset?: number; replicas?: unknown[] }>('/metrics/role'),
+  getLatencyDoctor: () => fetchApi<{ report: string }>('/metrics/latency/doctor'),
+  getMemoryDoctor: () => fetchApi<{ report: string }>('/metrics/memory/doctor'),
 };
