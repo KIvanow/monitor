@@ -16,7 +16,9 @@ import {
   ClusterNode,
   SlotStats,
   ConfigGetResponse,
+  SlowLogPatternAnalysis,
 } from '../common/types/metrics.types';
+import { analyzeSlowLogPatterns } from './slowlog-analyzer';
 
 @Injectable()
 export class MetricsService {
@@ -155,5 +157,24 @@ export class MetricsService {
 
   async getLastSaveTime(): Promise<number> {
     return this.dbClient.getLastSaveTime();
+  }
+
+  async getSlowLogPatternAnalysis(
+    count?: number,
+  ): Promise<SlowLogPatternAnalysis> {
+    const entries = await this.dbClient.getSlowLog(count || 128);
+    return analyzeSlowLogPatterns(entries);
+  }
+
+  async getCommandLogPatternAnalysis(
+    count?: number,
+    type?: CommandLogType,
+  ): Promise<SlowLogPatternAnalysis> {
+    const capabilities = this.dbClient.getCapabilities();
+    if (!capabilities.hasCommandLog) {
+      throw new Error('COMMANDLOG not supported on this database version');
+    }
+    const entries = await this.dbClient.getCommandLog(count || 128, type);
+    return analyzeSlowLogPatterns(entries as SlowLogEntry[]);
   }
 }

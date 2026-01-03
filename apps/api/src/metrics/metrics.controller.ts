@@ -16,6 +16,7 @@ import {
   ClusterNode,
   SlotStats,
   ConfigGetResponse,
+  SlowLogPatternAnalysis,
 } from '../common/types/metrics.types';
 
 @Controller('metrics')
@@ -74,6 +75,21 @@ export class MetricsController {
     }
   }
 
+  @Get('slowlog/patterns')
+  async getSlowLogPatternAnalysis(
+    @Query('count') count?: string,
+  ): Promise<SlowLogPatternAnalysis> {
+    try {
+      const parsedCount = count ? parseInt(count, 10) : undefined;
+      return await this.metricsService.getSlowLogPatternAnalysis(parsedCount);
+    } catch (error) {
+      throw new HttpException(
+        `Failed to analyze slowlog patterns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Get('commandlog')
   async getCommandLog(@Query('count') count?: string, @Query('type') type?: string): Promise<CommandLogEntry[]> {
     try {
@@ -120,6 +136,30 @@ export class MetricsController {
         : HttpStatus.INTERNAL_SERVER_ERROR;
       throw new HttpException(
         `Failed to reset commandlog: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        status,
+      );
+    }
+  }
+
+  @Get('commandlog/patterns')
+  async getCommandLogPatternAnalysis(
+    @Query('count') count?: string,
+    @Query('type') type?: string,
+  ): Promise<SlowLogPatternAnalysis> {
+    try {
+      const parsedCount = count ? parseInt(count, 10) : undefined;
+      const parsedType = type as CommandLogType | undefined;
+      return await this.metricsService.getCommandLogPatternAnalysis(
+        parsedCount,
+        parsedType,
+      );
+    } catch (error) {
+      const status =
+        error instanceof Error && error.message.includes('not supported')
+          ? HttpStatus.NOT_IMPLEMENTED
+          : HttpStatus.INTERNAL_SERVER_ERROR;
+      throw new HttpException(
+        `Failed to analyze commandlog patterns: ${error instanceof Error ? error.message : 'Unknown error'}`,
         status,
       );
     }

@@ -422,3 +422,11 @@ export interface SlotStats {
 export interface ConfigGetResponse {
   [key: string]: string;
 }
+
+export type {
+  SlowLogPatternExample,
+  SlowLogPatternStats,
+  CommandBreakdown,
+  KeyPrefixBreakdown,
+  SlowLogPatternAnalysis,
+} from '@betterdb/shared';

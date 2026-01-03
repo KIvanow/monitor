@@ -15,6 +15,7 @@ import type {
   DatabaseCapabilities,
   StoredAclEntry,
   AuditStats,
+  SlowLogPatternAnalysis,
 } from '../types/metrics';
 
 export const metricsApi = {
@@ -24,9 +25,20 @@ export const metricsApi = {
     return fetchApi<InfoResponse>(`/metrics/info${query}`);
   },
   getSlowLog: (count = 50) => fetchApi<SlowLogEntry[]>(`/metrics/slowlog?count=${count}`),
+  getSlowLogPatternAnalysis: (count?: number) => {
+    const params = count ? `?count=${count}` : '';
+    return fetchApi<SlowLogPatternAnalysis>(`/metrics/slowlog/patterns${params}`);
+  },
   getCommandLog: (count = 50, type?: CommandLogType) => {
     const query = type ? `?count=${count}&type=${type}` : `?count=${count}`;
     return fetchApi<CommandLogEntry[]>(`/metrics/commandlog${query}`);
+  },
+  getCommandLogPatternAnalysis: (count?: number, type?: CommandLogType) => {
+    const params = new URLSearchParams();
+    if (count) params.set('count', count.toString());
+    if (type) params.set('type', type);
+    const queryString = params.toString();
+    return fetchApi<SlowLogPatternAnalysis>(`/metrics/commandlog/patterns${queryString ? `?${queryString}` : ''}`);
   },
   getLatencyLatest: () => fetchApi<LatencyEvent[]>('/metrics/latency/latest'),
   getLatencyHistory: (eventName: string) =>
