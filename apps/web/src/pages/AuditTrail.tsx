@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { metricsApi } from '../api/metrics';
 import { usePolling } from '../hooks/usePolling';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
@@ -36,6 +36,16 @@ export function AuditTrail() {
   const filteredEntries = selectedUser && entries
     ? entries.filter(e => e.username === selectedUser)
     : entries;
+
+  const userOptions = useMemo(() => {
+    const usersFromStats = stats?.entriesByUser ?? {};
+    const usersFromEntries = new Set(entries?.map(e => e.username) ?? []);
+    const allUsers = new Set([...Object.keys(usersFromStats), ...usersFromEntries]);
+    return Array.from(allUsers).sort().map(user => ({
+      user,
+      count: usersFromStats[user],
+    }));
+  }, [stats?.entriesByUser, entries]);
 
   return (
     <div className="space-y-6">
@@ -138,7 +148,7 @@ export function AuditTrail() {
       <Card>
         <CardHeader>
           <CardTitle>All Audit Entries</CardTitle>
-          {stats && Object.keys(stats.entriesByUser).length > 0 && (
+          {userOptions.length > 0 && (
             <div className="mt-2">
               <select
                 className="border rounded px-2 py-1 text-sm"
@@ -146,9 +156,9 @@ export function AuditTrail() {
                 onChange={(e) => setSelectedUser(e.target.value)}
               >
                 <option value="">All Users</option>
-                {Object.keys(stats.entriesByUser).map((user) => (
+                {userOptions.map(({ user, count }) => (
                   <option key={user} value={user}>
-                    {user} ({stats.entriesByUser[user]})
+                    {user}{count !== undefined ? ` (${count})` : ''}
                   </option>
                 ))}
               </select>
