@@ -4,6 +4,7 @@ import {
   SlowLogPatternStats,
   CommandBreakdown,
   KeyPrefixBreakdown,
+  ClientBreakdown,
 } from '../common/types/metrics.types';
 
 const UUID_REGEX =
@@ -62,6 +63,7 @@ export function analyzeSlowLogPatterns(
       patterns: [],
       byCommand: [],
       byKeyPrefix: [],
+      byClient: [],
     };
   }
 
@@ -76,6 +78,7 @@ export function analyzeSlowLogPatterns(
 
   const commandMap = new Map<string, SlowLogEntry[]>();
   const prefixMap = new Map<string, SlowLogEntry[]>();
+  const clientMap = new Map<string, SlowLogEntry[]>();
 
   for (const entry of entries) {
     const command = entry.command[0]?.toUpperCase() || 'UNKNOWN';
@@ -103,6 +106,13 @@ export function analyzeSlowLogPatterns(
       }
       prefixMap.get(prefix)!.push(entry);
     }
+
+    // Aggregate by client
+    const clientIdentifier = entry.clientName || entry.clientAddress;
+    if (!clientMap.has(clientIdentifier)) {
+      clientMap.set(clientIdentifier, []);
+    }
+    clientMap.get(clientIdentifier)!.push(entry);
   }
 
   const totalEntries = entries.length;
@@ -112,6 +122,31 @@ export function analyzeSlowLogPatterns(
     .map(([pattern, data]) => {
       const durations = data.entries.map((e) => e.duration);
       const totalDuration = durations.reduce((a, b) => a + b, 0);
+
+      // Build client breakdown for this pattern
+      const clientMap = new Map<string, SlowLogEntry[]>();
+      for (const entry of data.entries) {
+        const clientIdentifier = entry.clientName || entry.clientAddress;
+        if (!clientMap.has(clientIdentifier)) {
+          clientMap.set(clientIdentifier, []);
+        }
+        clientMap.get(clientIdentifier)!.push(entry);
+      }
+
+      const clientBreakdown = Array.from(clientMap.entries())
+        .map(([clientIdentifier, clientEntries]) => {
+          const clientDurations = clientEntries.map((e) => e.duration);
+          return {
+            clientIdentifier,
+            count: clientEntries.length,
+            percentage: (clientEntries.length / data.entries.length) * 100,
+            avgDuration:
+              clientDurations.reduce((a, b) => a + b, 0) / clientEntries.length,
+            maxDuration: Math.max(...clientDurations),
+          };
+        })
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10); // Top 10 clients
 
       return {
         pattern,
@@ -130,6 +165,7 @@ export function analyzeSlowLogPatterns(
           fullCommand: e.command,
           clientAddress: e.clientAddress,
         })),
+        clientBreakdown,
       };
     })
     .sort((a, b) => b.count - a.count);
@@ -157,11 +193,24 @@ export function analyzeSlowLogPatterns(
     }))
     .sort((a, b) => b.count - a.count);
 
+  // Build client breakdown
+  const byClient: ClientBreakdown[] = Array.from(clientMap.entries())
+    .map(([clientIdentifier, clientEntries]) => ({
+      clientIdentifier,
+      count: clientEntries.length,
+      percentage: (clientEntries.length / totalEntries) * 100,
+      avgDuration:
+        clientEntries.reduce((a, e) => a + e.duration, 0) /
+        clientEntries.length,
+    }))
+    .sort((a, b) => b.count - a.count);
+
   return {
     totalEntries,
     analyzedAt: Date.now(),
     patterns,
     byCommand,
     byKeyPrefix,
+    byClient,
   };
 }

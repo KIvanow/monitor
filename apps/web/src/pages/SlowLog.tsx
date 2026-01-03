@@ -18,7 +18,7 @@ function getTabFromParams(params: URLSearchParams): CommandLogType {
 }
 
 export function SlowLog() {
-  const { hasCommandLog } = useCapabilities();
+  const { hasCommandLog, capabilities } = useCapabilities();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = getTabFromParams(searchParams);
   const [viewMode, setViewMode] = useState<'table' | 'patterns'>('table');
@@ -122,7 +122,9 @@ export function SlowLog() {
       ) : (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle>Slow Log (Redis)</CardTitle>
+            <CardTitle>
+              Slow Log ({capabilities?.dbType === 'valkey' ? 'Valkey' : 'Redis'})
+            </CardTitle>
             <div className="flex gap-2">
               <button
                 onClick={() => setViewMode('table')}

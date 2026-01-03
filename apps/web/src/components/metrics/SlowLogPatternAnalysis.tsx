@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import {
   Table,
@@ -8,6 +9,7 @@ import {
   TableRow,
 } from '../ui/table';
 import type { SlowLogPatternAnalysis } from '../../types/metrics';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 interface Props {
   analysis: SlowLogPatternAnalysis;
@@ -25,6 +27,22 @@ const COLORS = [
 ];
 
 export function SlowLogPatternAnalysisView({ analysis }: Props) {
+  const [expandedPatterns, setExpandedPatterns] = useState<Set<string>>(
+    new Set()
+  );
+
+  const togglePattern = (pattern: string) => {
+    setExpandedPatterns((prev) => {
+      const next = new Set(prev);
+      if (next.has(pattern)) {
+        next.delete(pattern);
+      } else {
+        next.add(pattern);
+      }
+      return next;
+    });
+  };
+
   const formatDuration = (us: number) => {
     if (us < 1000) return `${us.toFixed(0)}µs`;
     if (us < 1000000) return `${(us / 1000).toFixed(1)}ms`;
@@ -171,6 +189,35 @@ export function SlowLogPatternAnalysisView({ analysis }: Props) {
         </Card>
       )}
 
+      {/* Client Breakdown */}
+      {analysis.byClient && analysis.byClient.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>By Client</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2 flex-wrap">
+              {analysis.byClient.slice(0, 10).map((client) => (
+                <div
+                  key={client.clientIdentifier}
+                  className="px-3 py-2 bg-muted rounded-lg text-sm"
+                >
+                  <span className="font-mono font-semibold">
+                    {client.clientIdentifier}
+                  </span>
+                  <span className="text-muted-foreground ml-2">
+                    {client.percentage.toFixed(1)}% ({client.count})
+                  </span>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    avg {formatDuration(client.avgDuration)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Detailed Pattern Table */}
       <Card>
         <CardHeader>
@@ -180,6 +227,7 @@ export function SlowLogPatternAnalysisView({ analysis }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8"></TableHead>
                 <TableHead>Pattern</TableHead>
                 <TableHead className="text-right">Count</TableHead>
                 <TableHead className="text-right">%</TableHead>
@@ -190,32 +238,101 @@ export function SlowLogPatternAnalysisView({ analysis }: Props) {
             </TableHeader>
             <TableBody>
               {analysis.patterns.map((pattern, i) => (
-                <TableRow key={pattern.pattern}>
-                  <TableCell className="font-mono text-sm">
-                    <span className="inline-flex items-center gap-2">
-                      <span
-                        className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{
-                          backgroundColor: COLORS[i % COLORS.length],
-                        }}
-                      />
-                      {pattern.pattern}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">{pattern.count}</TableCell>
-                  <TableCell className="text-right">
-                    {pattern.percentage.toFixed(1)}%
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
-                    {formatDuration(pattern.avgDuration)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
-                    {formatDuration(pattern.maxDuration)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono">
-                    {formatDuration(pattern.totalDuration)}
-                  </TableCell>
-                </TableRow>
+                <React.Fragment key={pattern.pattern}>
+                  <TableRow
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => togglePattern(pattern.pattern)}
+                  >
+                    <TableCell>
+                      {expandedPatterns.has(pattern.pattern) ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">
+                      <span className="inline-flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{
+                            backgroundColor: COLORS[i % COLORS.length],
+                          }}
+                        />
+                        {pattern.pattern}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">{pattern.count}</TableCell>
+                    <TableCell className="text-right">
+                      {pattern.percentage.toFixed(1)}%
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatDuration(pattern.avgDuration)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatDuration(pattern.maxDuration)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatDuration(pattern.totalDuration)}
+                    </TableCell>
+                  </TableRow>
+                  {expandedPatterns.has(pattern.pattern) && (
+                    <TableRow key={`${pattern.pattern}-details`}>
+                      <TableCell colSpan={7} className="bg-muted/30 p-0">
+                        <div className="p-4">
+                          <h4 className="text-sm font-semibold mb-3">
+                            Client Breakdown
+                          </h4>
+                          {pattern.clientBreakdown.length > 0 ? (
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Client</TableHead>
+                                  <TableHead className="text-right">
+                                    Count
+                                  </TableHead>
+                                  <TableHead className="text-right">
+                                    % of Pattern
+                                  </TableHead>
+                                  <TableHead className="text-right">
+                                    Avg Duration
+                                  </TableHead>
+                                  <TableHead className="text-right">
+                                    Max Duration
+                                  </TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {pattern.clientBreakdown.map((client) => (
+                                  <TableRow key={client.clientIdentifier}>
+                                    <TableCell className="font-mono text-sm">
+                                      {client.clientIdentifier}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {client.count}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {client.percentage.toFixed(1)}%
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">
+                                      {formatDuration(client.avgDuration)}
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono">
+                                      {formatDuration(client.maxDuration)}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              No client breakdown available
+                            </p>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>

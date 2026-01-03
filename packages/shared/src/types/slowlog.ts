@@ -6,6 +6,14 @@ export interface SlowLogPatternExample {
   clientAddress: string;
 }
 
+export interface PatternClientBreakdown {
+  clientIdentifier: string;
+  count: number;
+  percentage: number;
+  avgDuration: number;
+  maxDuration: number;
+}
+
 export interface SlowLogPatternStats {
   pattern: string;
   command: string;
@@ -17,6 +25,7 @@ export interface SlowLogPatternStats {
   maxDuration: number;
   minDuration: number;
   examples: SlowLogPatternExample[];
+  clientBreakdown: PatternClientBreakdown[];
 }
 
 export interface CommandBreakdown {
@@ -33,10 +42,18 @@ export interface KeyPrefixBreakdown {
   avgDuration: number;
 }
 
+export interface ClientBreakdown {
+  clientIdentifier: string;
+  count: number;
+  percentage: number;
+  avgDuration: number;
+}
+
 export interface SlowLogPatternAnalysis {
   totalEntries: number;
   analyzedAt: number;
   patterns: SlowLogPatternStats[];
   byCommand: CommandBreakdown[];
   byKeyPrefix: KeyPrefixBreakdown[];
+  byClient: ClientBreakdown[];
 }

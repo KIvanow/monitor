@@ -428,5 +428,6 @@ export type {
   SlowLogPatternStats,
   CommandBreakdown,
   KeyPrefixBreakdown,
+  ClientBreakdown,
   SlowLogPatternAnalysis,
 } from '@betterdb/shared';
