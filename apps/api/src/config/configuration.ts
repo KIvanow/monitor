@@ -16,6 +16,11 @@ export interface StorageConfig {
     pollIntervalMs: number;
     retentionDays: number;
   };
+  clientAnalytics: {
+    enabled: boolean;
+    pollIntervalMs: number;
+    retentionDays: number;
+  };
 }
 
 export interface AppConfig {
@@ -40,6 +45,11 @@ export default (): AppConfig => ({
       enabled: process.env.AUDIT_ENABLED === 'true' || true,
       pollIntervalMs: parseInt(process.env.AUDIT_POLL_INTERVAL_MS || '60000', 10),
       retentionDays: parseInt(process.env.AUDIT_RETENTION_DAYS || '30', 10),
+    },
+    clientAnalytics: {
+      enabled: process.env.CLIENT_ANALYTICS_ENABLED === 'true' || true,
+      pollIntervalMs: parseInt(process.env.CLIENT_ANALYTICS_POLL_INTERVAL_MS || '60000', 10),
+      retentionDays: parseInt(process.env.CLIENT_ANALYTICS_RETENTION_DAYS || '7', 10),
     },
   },
 });

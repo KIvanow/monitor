@@ -166,4 +166,7 @@ export type {
   CommandBreakdown,
   KeyPrefixBreakdown,
   SlowLogPatternAnalysis,
+  StoredClientSnapshot,
+  ClientTimeSeriesPoint,
+  ClientAnalyticsStats,
 } from '@betterdb/shared';

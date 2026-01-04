@@ -16,6 +16,9 @@ import type {
   StoredAclEntry,
   AuditStats,
   SlowLogPatternAnalysis,
+  StoredClientSnapshot,
+  ClientTimeSeriesPoint,
+  ClientAnalyticsStats,
 } from '../types/metrics';
 
 export const metricsApi = {
@@ -98,5 +101,34 @@ export const metricsApi = {
     query.set('limit', limit.toString());
     query.set('offset', offset.toString());
     return fetchApi<StoredAclEntry[]>(`/audit/by-user?${query.toString()}`);
+  },
+
+  getClientTimeSeries: (startTime: number, endTime: number, bucketSize?: number) => {
+    const params = new URLSearchParams({
+      startTime: startTime.toString(),
+      endTime: endTime.toString(),
+      ...(bucketSize && { bucketSize: bucketSize.toString() }),
+    });
+    return fetchApi<ClientTimeSeriesPoint[]>(`/client-analytics/timeseries?${params}`);
+  },
+  getClientAnalyticsStats: (startTime?: number, endTime?: number) => {
+    const params = new URLSearchParams();
+    if (startTime) params.append('startTime', startTime.toString());
+    if (endTime) params.append('endTime', endTime.toString());
+    const queryString = params.toString();
+    return fetchApi<ClientAnalyticsStats>(`/client-analytics/stats${queryString ? `?${queryString}` : ''}`);
+  },
+  getClientConnectionHistory: (
+    identifier: { name?: string; user?: string; addr?: string },
+    startTime?: number,
+    endTime?: number,
+  ) => {
+    const params = new URLSearchParams();
+    if (identifier.name) params.append('name', identifier.name);
+    if (identifier.user) params.append('user', identifier.user);
+    if (identifier.addr) params.append('addr', identifier.addr);
+    if (startTime) params.append('startTime', startTime.toString());
+    if (endTime) params.append('endTime', endTime.toString());
+    return fetchApi<StoredClientSnapshot[]>(`/client-analytics/history?${params}`);
   },
 };
