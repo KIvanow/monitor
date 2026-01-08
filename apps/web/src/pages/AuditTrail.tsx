@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { metricsApi } from '../api/metrics';
 import { usePolling } from '../hooks/usePolling';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
-import type { StoredAclEntry, AuditStats } from '../types/metrics';
 
 function formatTimestamp(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleString();
@@ -107,11 +106,11 @@ export function AuditTrail() {
         </Card>
       )}
 
-      {/* Failed Authentication */}
+      {/* Authentication Events */}
       {failedAuth && failedAuth.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-destructive">Recent Failed Authentication</CardTitle>
+            <CardTitle>Recent Authentication Events</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -194,7 +193,9 @@ export function AuditTrail() {
                       <td className="p-2">
                         <span
                           className={`px-2 py-1 rounded text-xs ${
-                            entry.reason.includes('auth')
+                            entry.reason === 'auth'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                              : entry.reason === 'command'
                               ? 'bg-destructive/10 text-destructive'
                               : 'bg-muted'
                           }`}

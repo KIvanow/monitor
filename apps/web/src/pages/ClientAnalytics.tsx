@@ -3,7 +3,6 @@ import { metricsApi } from '../api/metrics';
 import { usePolling } from '../hooks/usePolling';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import type { ClientAnalyticsStats, ClientTimeSeriesPoint, StoredClientSnapshot } from '../types/metrics';
 
 type TimeRange = '1h' | '6h' | '24h' | '7d' | 'custom';
 
@@ -42,7 +41,7 @@ export function ClientAnalytics() {
     interval: 10000, // 10 seconds
   });
 
-  const { data: timeSeries, loading: timeSeriesLoading } = usePolling({
+  const { data: timeSeries } = usePolling({
     fetcher: () => metricsApi.getClientTimeSeries(start, end, bucket),
     interval: 10000,
   });

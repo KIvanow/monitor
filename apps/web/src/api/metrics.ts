@@ -12,7 +12,6 @@ import type {
   ClientInfo,
   AclLogEntry,
   SlotStats,
-  DatabaseCapabilities,
   StoredAclEntry,
   AuditStats,
   SlowLogPatternAnalysis,

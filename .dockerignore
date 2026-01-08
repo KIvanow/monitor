@@ -1,0 +1,51 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build artifacts
+dist
+**/dist
+.turbo
+**/.turbo
+
+# Environment files
+.env*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage
+.nyc_output
+
+# Development
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# SQLite adapter (local development only, excluded from production builds)
+apps/api/src/storage/adapters/sqlite.adapter.ts

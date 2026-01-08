@@ -89,6 +89,123 @@ Build for production:
 pnpm build
 ```
 
+## Docker Production Deployment
+
+### Building the Docker Image
+
+Build the production Docker image (188MB, optimized):
+
+```bash
+docker build -t betterdb/monitor .
+```
+
+### Running the Docker Container
+
+The Docker image contains only the monitoring application (backend + frontend). It requires:
+1. A Valkey/Redis instance to monitor
+2. A PostgreSQL instance for data persistence (or use memory storage)
+
+#### Basic Run (Memory Storage)
+
+```bash
+docker run -d \
+  --name betterdb-monitor \
+  -p 3001:3001 \
+  -e DB_HOST=your-valkey-host \
+  -e DB_PORT=6379 \
+  -e DB_PASSWORD=your-password \
+  -e STORAGE_TYPE=memory \
+  betterdb/monitor
+```
+
+#### Run with PostgreSQL Storage
+
+```bash
+docker run -d \
+  --name betterdb-monitor \
+  -p 3001:3001 \
+  -e DB_HOST=your-valkey-host \
+  -e DB_PORT=6379 \
+  -e DB_PASSWORD=your-password \
+  -e STORAGE_TYPE=postgres \
+  -e STORAGE_URL=postgresql://user:pass@postgres-host:5432/dbname \
+  betterdb/monitor
+```
+
+#### Run with Host Network (Access localhost services)
+
+If your Valkey and PostgreSQL are running on the same host:
+
+```bash
+docker run -d \
+  --name betterdb-monitor \
+  --network host \
+  -e DB_HOST=localhost \
+  -e DB_PORT=6380 \
+  -e DB_PASSWORD=devpassword \
+  -e STORAGE_TYPE=postgres \
+  -e STORAGE_URL=postgresql://dev:devpass@localhost:5432/postgres \
+  betterdb/monitor
+```
+
+#### Auto-Remove Previous Container
+
+To automatically remove any existing container with the same name:
+
+```bash
+docker rm -f betterdb-monitor 2>/dev/null; docker run -d \
+  --name betterdb-monitor \
+  -p 3001:3001 \
+  -e DB_HOST=your-valkey-host \
+  -e DB_PORT=6379 \
+  -e DB_PASSWORD=your-password \
+  -e STORAGE_TYPE=postgres \
+  -e STORAGE_URL=postgresql://user:pass@postgres-host:5432/dbname \
+  betterdb/monitor
+```
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DB_HOST` | Yes | `localhost` | Valkey/Redis host to monitor |
+| `DB_PORT` | No | `6379` | Valkey/Redis port |
+| `DB_PASSWORD` | No | - | Valkey/Redis password |
+| `DB_USERNAME` | No | `default` | Valkey/Redis ACL username |
+| `DB_TYPE` | No | `auto` | Database type: `auto`, `valkey`, or `redis` |
+| `STORAGE_TYPE` | No | `memory` | Storage backend: `memory` or `postgres` |
+| `STORAGE_URL` | Conditional | - | PostgreSQL connection URL (required if `STORAGE_TYPE=postgres`) |
+| `PORT` | No | `3001` | Application HTTP port |
+| `NODE_ENV` | No | `production` | Node environment |
+
+### Accessing the Application
+
+Once running, access the web interface at:
+- **Web UI**: `http://localhost:3001`
+- **Health Check**: `http://localhost:3001/health`
+- **Prometheus Metrics**: `http://localhost:3001/prometheus/metrics`
+
+### Docker Image Details
+
+- **Base Image**: `node:20-alpine`
+- **Size**: ~188MB (optimized, no build tools)
+- **Architecture**: Multi-stage build
+- **Contains**: Backend API + Frontend static files (served by Fastify)
+- **Excluded**: SQLite support (use PostgreSQL or Memory storage)
+
+### Checking Container Logs
+
+```bash
+docker logs -f betterdb-monitor
+```
+
+### Stopping the Container
+
+```bash
+docker stop betterdb-monitor
+docker rm betterdb-monitor
+```
+
 ## Features
 
 ### Current Features
@@ -202,7 +319,9 @@ Metrics are exposed at `GET /prometheus/metrics` in Prometheus text format.
 
 ## Configuration
 
-Edit `.env` to configure database connection:
+### Database Connection (Valkey/Redis)
+
+Edit `.env` to configure the Valkey/Redis database connection:
 
 ```env
 DB_HOST=localhost
@@ -210,6 +329,72 @@ DB_PORT=6379
 DB_USERNAME=default
 DB_PASSWORD=devpassword
 DB_TYPE=auto  # 'valkey' | 'redis' | 'auto'
+```
+
+### Storage Backend
+
+BetterDB Monitor supports multiple storage backends for persisting audit trail and client analytics data:
+
+#### SQLite (Local Development Only)
+```bash
+STORAGE_TYPE=sqlite
+STORAGE_SQLITE_FILEPATH=./data/audit.db  # Optional, defaults to this path
+```
+- **Use Case**: Local development
+- **Pros**: No external database required, simple setup
+- **Cons**: Not available in Docker production builds
+- **Data Location**: `apps/api/data/audit.db`
+
+#### PostgreSQL (Recommended for Production)
+```bash
+STORAGE_TYPE=postgres
+STORAGE_URL=postgresql://username:password@host:port/database
+```
+- **Use Case**: Production and local development
+- **Pros**: Full relational database, better for production workloads
+- **Cons**: Requires PostgreSQL instance
+- **Example**: `postgresql://dev:devpass@localhost:5432/postgres`
+
+#### Memory (Testing/Ephemeral)
+```bash
+STORAGE_TYPE=memory
+```
+- **Use Case**: Testing, ephemeral environments
+- **Pros**: No persistence required, fast
+- **Cons**: All data lost on restart
+
+### Running Locally with Different Storage Backends
+
+#### With SQLite:
+```bash
+STORAGE_TYPE=sqlite \
+DB_HOST=localhost \
+DB_PORT=6380 \
+DB_PASSWORD=devpassword \
+pnpm dev:api
+```
+
+#### With PostgreSQL:
+```bash
+# Start PostgreSQL (if using docker-compose)
+docker compose up -d postgres
+
+# Run API with PostgreSQL
+STORAGE_TYPE=postgres \
+STORAGE_URL=postgresql://betterdb:devpassword@localhost:5432/betterdb \
+DB_HOST=localhost \
+DB_PORT=6380 \
+DB_PASSWORD=devpassword \
+pnpm dev:api
+```
+
+#### With Memory:
+```bash
+STORAGE_TYPE=memory \
+DB_HOST=localhost \
+DB_PORT=6380 \
+DB_PASSWORD=devpassword \
+pnpm dev:api
 ```
 
 ## Development

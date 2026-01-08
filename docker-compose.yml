@@ -34,3 +34,24 @@ services:
       timeout: 3s
       retries: 3
     restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: betterdb-monitor-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: betterdb
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: betterdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U betterdb"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

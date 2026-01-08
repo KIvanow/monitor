@@ -1,3 +1,5 @@
+// SQLite adapter for local development only
+// This file is excluded from Docker builds via .dockerignore
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';

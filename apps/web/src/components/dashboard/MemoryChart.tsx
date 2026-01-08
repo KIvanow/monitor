@@ -32,7 +32,10 @@ export function MemoryChart({ data }: Props) {
               tickFormatter={(value) => `${(value / 1024 / 1024).toFixed(0)}MB`}
             />
             <Tooltip
-              formatter={(value: number) => [`${(value / 1024 / 1024).toFixed(2)} MB`]}
+              formatter={(value) => {
+                const num = typeof value === 'number' ? value : 0;
+                return [`${(num / 1024 / 1024).toFixed(2)} MB`];
+              }}
             />
             <Area
               type="monotone"
