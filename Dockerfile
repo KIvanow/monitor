@@ -61,11 +61,13 @@ ENV DB_TYPE=auto
 ENV DB_USERNAME=default
 ENV STORAGE_TYPE=memory
 
+# Expose port (can be overridden with -e PORT=<port> at runtime)
+# Note: EXPOSE is documentation only - actual port binding happens via -p flag
 EXPOSE 3001
 
-# Health check
+# Health check - uses PORT environment variable
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/api/health || exit 1
 
 # Start the server
 CMD ["node", "apps/api/dist/main.js"]

@@ -118,6 +118,24 @@ docker run -d \
   betterdb/monitor
 ```
 
+#### Run on Custom Port
+
+You can run the application on any port by setting the `PORT` environment variable with `-e PORT=<port>`:
+
+```bash
+docker run -d \
+  --name betterdb-monitor \
+  -p 8080:8080 \
+  -e PORT=8080 \
+  -e DB_HOST=your-valkey-host \
+  -e DB_PORT=6379 \
+  -e DB_PASSWORD=your-password \
+  -e STORAGE_TYPE=memory \
+  betterdb/monitor
+```
+
+**Note**: When not using `--network host`, make sure the `-p` flag port mapping matches the `PORT` environment variable (e.g., `-p 8080:8080 -e PORT=8080`).
+
 #### Run with PostgreSQL Storage
 
 ```bash
