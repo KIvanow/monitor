@@ -16,6 +16,7 @@
     "dev:api": "turbo dev --filter=api",
     "dev:web": "turbo dev --filter=web",
     "docker:build": "docker build -t betterdb/monitor .",
+    "docker:build:multiarch": "docker buildx build --platform linux/amd64,linux/arm64 -t betterdb/monitor:latest .",
     "docker:run": "docker run -p 3001:3001 --env-file .env betterdb/monitor",
     "docker:dev": "docker compose up -d",
     "docker:dev:down": "docker compose down",

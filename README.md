@@ -93,10 +93,20 @@ pnpm build
 
 ### Building the Docker Image
 
-Build the production Docker image (188MB, optimized):
+```bash
+pnpm docker:build
+```
+
+For multi-arch builds (AMD64 + ARM64), first set up buildx:
 
 ```bash
-docker build -t betterdb/monitor .
+docker buildx create --name mybuilder --use --bootstrap
+```
+
+Then build:
+
+```bash
+pnpm docker:build:multiarch
 ```
 
 ### Running the Docker Container
@@ -207,7 +217,7 @@ Once running, access the web interface at:
 
 - **Base Image**: `node:20-alpine`
 - **Size**: ~188MB (optimized, no build tools)
-- **Architecture**: Multi-stage build
+- **Platforms**: `linux/amd64`, `linux/arm64`
 - **Contains**: Backend API + Frontend static files (served by Fastify)
 - **Excluded**: SQLite support (use PostgreSQL or Memory storage)
 
