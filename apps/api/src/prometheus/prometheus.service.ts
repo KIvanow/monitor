@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, Inject, Logger } from '@nestjs/common';
-import { Registry, Gauge, collectDefaultMetrics } from 'prom-client';
+import { Registry, Gauge, Counter, Histogram, collectDefaultMetrics } from 'prom-client';
 import { StoragePort } from '../common/interfaces/storage-port.interface';
 import { DatabasePort } from '../common/interfaces/database-port.interface';
 import { analyzeSlowLogPatterns } from '../metrics/slowlog-analyzer';
@@ -90,6 +90,12 @@ export class PrometheusService implements OnModuleInit {
   // Slowlog Raw Metrics
   private slowlogLength: Gauge;
   private slowlogLastId: Gauge;
+
+  // Poll Counter Metric
+  private pollsTotal: Counter;
+
+  // Poll Duration Metric
+  private pollDuration: Histogram;
 
   constructor(
     @Inject('STORAGE_CLIENT') private storage: StoragePort,
@@ -195,6 +201,22 @@ export class PrometheusService implements OnModuleInit {
     // Slowlog Raw Metrics
     this.slowlogLength = this.createGauge('slowlog_length', 'Current slowlog length');
     this.slowlogLastId = this.createGauge('slowlog_last_id', 'ID of last slowlog entry');
+
+    // Poll Counter Metric
+    this.pollsTotal = new Counter({
+      name: 'betterdb_polls_total',
+      help: 'Total number of poll cycles completed',
+      registers: [this.registry],
+    });
+
+    // Poll Duration Metric
+    this.pollDuration = new Histogram({
+      name: 'betterdb_poll_duration_seconds',
+      help: 'Duration of poll cycles in seconds',
+      labelNames: ['service'],
+      buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+      registers: [this.registry],
+    });
   }
 
   async updateMetrics(): Promise<void> {
@@ -503,5 +525,13 @@ export class PrometheusService implements OnModuleInit {
 
   getContentType(): string {
     return this.registry.contentType;
+  }
+
+  incrementPollCounter(): void {
+    this.pollsTotal.inc();
+  }
+
+  startPollTimer(service: string): () => void {
+    return this.pollDuration.startTimer({ service });
   }
 }

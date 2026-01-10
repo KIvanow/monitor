@@ -1,0 +1,16 @@
+# Benchmark results
+betterdb-results/
+results*/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+
+# Virtual environment (if created here)
+venv/
+env/

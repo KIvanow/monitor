@@ -8,6 +8,7 @@ import {
   ClientTimeSeriesPoint,
   ClientAnalyticsStats,
 } from '../common/interfaces/storage-port.interface';
+import { PrometheusService } from '../prometheus/prometheus.service';
 
 @Injectable()
 export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
@@ -20,6 +21,7 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
     @Inject('DATABASE_CLIENT') private dbClient: DatabasePort,
     @Inject('STORAGE_CLIENT') private storage: StoragePort,
     private configService: ConfigService,
+    private prometheusService: PrometheusService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -65,6 +67,8 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
 
   private async captureSnapshot(): Promise<void> {
     this.isPolling = true;
+    const endTimer = this.prometheusService.startPollTimer('client-analytics');
+
     try {
       const clients = await this.dbClient.getClients();
       const now = Date.now();
@@ -95,7 +99,9 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
 
       const saved = await this.storage.saveClientSnapshot(snapshots);
       this.logger.debug(`Saved ${saved} client snapshots`);
+      this.prometheusService.incrementPollCounter();
     } finally {
+      endTimer();
       this.isPolling = false;
     }
   }

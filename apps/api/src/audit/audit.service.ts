@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DatabasePort } from '../common/interfaces/database-port.interface';
 import { StoragePort, StoredAclEntry } from '../common/interfaces/storage-port.interface';
 import { AclLogEntry } from '../common/types/metrics.types';
+import { PrometheusService } from '../prometheus/prometheus.service';
 
 @Injectable()
 export class AuditService implements OnModuleInit, OnModuleDestroy {
@@ -22,6 +23,7 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     @Inject('STORAGE_CLIENT')
     private readonly storageClient: StoragePort,
     private readonly configService: ConfigService,
+    private readonly prometheusService: PrometheusService,
   ) {
     this.enabled = this.configService.get<boolean>('storage.audit.enabled', true);
     this.pollIntervalMs = this.configService.get<number>('storage.audit.pollIntervalMs', 60000);
@@ -83,6 +85,8 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async pollAclLog(): Promise<void> {
+    const endTimer = this.prometheusService.startPollTimer('audit');
+
     try {
       const capabilities = this.dbClient.getCapabilities();
       if (!capabilities.hasAclLog) {
@@ -126,12 +130,14 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
       const saved = await this.storageClient.saveAclEntries(storedEntries);
       this.logger.debug(`Saved ${saved} new ACL entries`);
 
-      // Update last seen timestamp
       const latestTimestamp = Math.max(...newEntries.map((e) => e.timestampLastUpdated));
       this.lastSeenTimestamp = latestTimestamp;
+      this.prometheusService.incrementPollCounter();
     } catch (error) {
       this.logger.error(`Error polling ACL log: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
+    } finally {
+      endTimer();
     }
   }
 
