@@ -58,11 +58,10 @@ export function Dashboard() {
         <CapabilitiesBadges />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <ConnectionCard health={health} loading={healthLoading} />
+        <OverviewCards info={info} />
       </div>
-
-      <OverviewCards info={info} />
 
       <DoctorCard
         title="Memory Doctor"
