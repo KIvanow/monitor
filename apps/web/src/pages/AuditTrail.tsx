@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { metricsApi } from '../api/metrics';
 import { usePolling } from '../hooks/usePolling';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
@@ -15,7 +16,21 @@ function formatRelativeTime(seconds: number): string {
 }
 
 export function AuditTrail() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedUser, setSelectedUser] = useState<string>('');
+  const ipFilter = searchParams.get('ip');
+
+  useEffect(() => {
+    const user = searchParams.get('user');
+    if (user) {
+      setSelectedUser(user);
+    }
+  }, [searchParams]);
+
+  const clearIpFilter = () => {
+    searchParams.delete('ip');
+    setSearchParams(searchParams);
+  };
 
   const { data: stats } = usePolling({
     fetcher: () => metricsApi.getAuditStats(),
@@ -32,9 +47,21 @@ export function AuditTrail() {
     interval: 10000,
   });
 
-  const filteredEntries = selectedUser && entries
-    ? entries.filter(e => e.username === selectedUser)
-    : entries;
+  const filteredEntries = useMemo(() => {
+    let result = entries || [];
+    if (selectedUser) {
+      result = result.filter(e => e.username === selectedUser);
+    }
+    if (ipFilter) {
+      result = result.filter(e => e.sourceHost?.includes(ipFilter) || e.clientInfo?.includes(ipFilter));
+    }
+    return result;
+  }, [entries, selectedUser, ipFilter]);
+
+  const filteredFailedAuth = useMemo(() => {
+    if (!failedAuth || !ipFilter) return failedAuth;
+    return failedAuth.filter(e => e.clientInfo?.includes(ipFilter));
+  }, [failedAuth, ipFilter]);
 
   const userOptions = useMemo(() => {
     const usersFromStats = stats?.entriesByUser ?? {};
@@ -48,7 +75,22 @@ export function AuditTrail() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Audit Trail</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Audit Trail</h1>
+        {ipFilter && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-muted rounded">
+            <span className="text-sm">
+              Filtered by IP: <span className="font-mono">{ipFilter}</span>
+            </span>
+            <button
+              onClick={clearIpFilter}
+              className="text-xs px-2 py-0.5 bg-destructive text-destructive-foreground rounded hover:bg-destructive/90"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -107,10 +149,13 @@ export function AuditTrail() {
       )}
 
       {/* Authentication Events */}
-      {failedAuth && failedAuth.length > 0 && (
+      {filteredFailedAuth && filteredFailedAuth.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Recent Authentication Events</CardTitle>
+            <CardTitle>
+              Recent Authentication Events
+              {ipFilter && <span className="text-sm font-normal text-muted-foreground ml-2">({filteredFailedAuth.length} from {ipFilter})</span>}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -126,7 +171,7 @@ export function AuditTrail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {failedAuth.slice(0, 10).map((entry) => (
+                  {filteredFailedAuth.slice(0, 10).map((entry) => (
                     <tr key={entry.id} className="border-b hover:bg-muted">
                       <td className="p-2">{formatTimestamp(entry.capturedAt)}</td>
                       <td className="p-2 font-mono">{entry.username}</td>

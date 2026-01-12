@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { metricsApi } from '../api/metrics';
 import { usePolling } from '../hooks/usePolling';
@@ -17,10 +17,24 @@ function getTabFromParams(params: URLSearchParams): CommandLogType {
   return 'slow';
 }
 
+function filterByClient<T extends { clientName: string; clientAddress: string }>(
+  entries: T[],
+  clientFilter: string | null
+): T[] {
+  if (!clientFilter) return entries;
+  const filter = clientFilter.toLowerCase();
+  return entries.filter(
+    (e) =>
+      e.clientName?.toLowerCase().includes(filter) ||
+      e.clientAddress?.toLowerCase().includes(filter)
+  );
+}
+
 export function SlowLog() {
   const { hasCommandLog, capabilities } = useCapabilities();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = getTabFromParams(searchParams);
+  const clientFilter = searchParams.get('client');
   const [viewMode, setViewMode] = useState<'table' | 'patterns'>('table');
 
   const handleTabChange = (newTab: CommandLogType) => {
@@ -70,9 +84,49 @@ export function SlowLog() {
     enabled: hasCommandLog && viewMode === 'patterns',
   });
 
+  const filteredSlowLog = useMemo(
+    () => filterByClient(slowLog || [], clientFilter),
+    [slowLog, clientFilter]
+  );
+
+  const filteredCommandLogSlow = useMemo(
+    () => filterByClient(commandLogSlow || [], clientFilter),
+    [commandLogSlow, clientFilter]
+  );
+
+  const filteredCommandLogLargeRequest = useMemo(
+    () => filterByClient(commandLogLargeRequest || [], clientFilter),
+    [commandLogLargeRequest, clientFilter]
+  );
+
+  const filteredCommandLogLargeReply = useMemo(
+    () => filterByClient(commandLogLargeReply || [], clientFilter),
+    [commandLogLargeReply, clientFilter]
+  );
+
+  const clearClientFilter = () => {
+    searchParams.delete('client');
+    setSearchParams(searchParams);
+  };
+
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Slow Log</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Slow Log</h1>
+        {clientFilter && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-muted rounded">
+            <span className="text-sm">
+              Filtered by: <span className="font-mono">{clientFilter}</span>
+            </span>
+            <button
+              onClick={clearClientFilter}
+              className="text-xs px-2 py-0.5 bg-destructive text-destructive-foreground rounded hover:bg-destructive/90"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
 
       {hasCommandLog ? (
         <Card>
@@ -109,9 +163,9 @@ export function SlowLog() {
             ) : (
               <CommandLogTable
                 entries={{
-                  slow: commandLogSlow || [],
-                  'large-request': commandLogLargeRequest || [],
-                  'large-reply': commandLogLargeReply || [],
+                  slow: filteredCommandLogSlow,
+                  'large-request': filteredCommandLogLargeRequest,
+                  'large-reply': filteredCommandLogLargeReply,
                 }}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
@@ -152,7 +206,7 @@ export function SlowLog() {
             {viewMode === 'patterns' && slowLogPatternAnalysis ? (
               <SlowLogPatternAnalysisView analysis={slowLogPatternAnalysis} />
             ) : (
-              <SlowLogTable entries={slowLog || []} />
+              <SlowLogTable entries={filteredSlowLog} />
             )}
           </CardContent>
         </Card>

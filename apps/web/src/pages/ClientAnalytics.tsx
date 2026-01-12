@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { metricsApi } from '../api/metrics';
 import { usePolling } from '../hooks/usePolling';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
@@ -31,8 +32,22 @@ function getTimeRangeMs(range: TimeRange): { start: number; end: number; bucket:
 }
 
 export function ClientAnalytics() {
+  const [searchParams] = useSearchParams();
   const [timeRange, setTimeRange] = useState<TimeRange>('1h');
   const [selectedClient, setSelectedClient] = useState<{ name?: string; user?: string; addr?: string } | null>(null);
+
+  useEffect(() => {
+    const name = searchParams.get('name');
+    const user = searchParams.get('user');
+    const addr = searchParams.get('addr');
+    if (name || user || addr) {
+      setSelectedClient({
+        ...(name && { name }),
+        ...(user && { user }),
+        ...(addr && { addr }),
+      });
+    }
+  }, [searchParams]);
 
   const { start, end, bucket } = getTimeRangeMs(timeRange);
 
