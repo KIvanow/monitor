@@ -41,6 +41,7 @@ export class ValkeyAdapter implements DatabasePort {
       password: config.password,
       lazyConnect: true,
       enableOfflineQueue: false,
+      connectionName: 'BetterDB-Monitor',
     });
 
     this.client.on('connect', () => {
