@@ -33,6 +33,60 @@ import type {
   SpikeDetectionResponse,
 } from '@betterdb/shared';
 
+// Anomaly Event Types
+export interface StoredAnomalyEvent {
+  id: string;
+  timestamp: number;
+  metricType: string;
+  anomalyType: string;
+  severity: string;
+  value: number;
+  baseline: number;
+  stdDev: number;
+  zScore: number;
+  threshold: number;
+  message: string;
+  correlationId?: string;
+  relatedMetrics?: string[];
+  resolved: boolean;
+  resolvedAt?: number;
+  durationMs?: number;
+  sourceHost?: string;
+  sourcePort?: number;
+}
+
+export interface StoredCorrelatedGroup {
+  correlationId: string;
+  timestamp: number;
+  pattern: string;
+  severity: string;
+  diagnosis: string;
+  recommendations: string[];
+  anomalyCount: number;
+  metricTypes: string[];
+  sourceHost?: string;
+  sourcePort?: number;
+}
+
+export interface AnomalyQueryOptions {
+  startTime?: number;
+  endTime?: number;
+  severity?: string;
+  metricType?: string;
+  pattern?: string;
+  resolved?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AnomalyStats {
+  totalEvents: number;
+  bySeverity: Record<string, number>;
+  byMetric: Record<string, number>;
+  byPattern: Record<string, number>;
+  unresolvedCount: number;
+}
+
 export interface StoragePort {
   initialize(): Promise<void>;
   close(): Promise<void>;
@@ -49,4 +103,16 @@ export interface StoragePort {
   getClientAnalyticsStats(startTime?: number, endTime?: number): Promise<ClientAnalyticsStats>;
   getClientConnectionHistory(identifier: { name?: string; user?: string; addr?: string }, startTime?: number, endTime?: number): Promise<StoredClientSnapshot[]>;
   pruneOldClientSnapshots(olderThanTimestamp: number): Promise<number>;
+
+  // Anomaly Methods
+  saveAnomalyEvent(event: StoredAnomalyEvent): Promise<string>;
+  saveAnomalyEvents(events: StoredAnomalyEvent[]): Promise<number>;
+  getAnomalyEvents(options?: AnomalyQueryOptions): Promise<StoredAnomalyEvent[]>;
+  getAnomalyStats(startTime?: number, endTime?: number): Promise<AnomalyStats>;
+  resolveAnomaly(id: string, resolvedAt: number): Promise<boolean>;
+  pruneOldAnomalyEvents(cutoffTimestamp: number): Promise<number>;
+
+  saveCorrelatedGroup(group: StoredCorrelatedGroup): Promise<string>;
+  getCorrelatedGroups(options?: AnomalyQueryOptions): Promise<StoredCorrelatedGroup[]>;
+  pruneOldCorrelatedGroups(cutoffTimestamp: number): Promise<number>;
 }

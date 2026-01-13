@@ -12,6 +12,10 @@ import {
   ClientSnapshotQueryOptions,
   ClientTimeSeriesPoint,
   ClientAnalyticsStats,
+  StoredAnomalyEvent,
+  StoredCorrelatedGroup,
+  AnomalyQueryOptions,
+  AnomalyStats,
 } from '../../common/interfaces/storage-port.interface';
 
 export interface SqliteAdapterConfig {
@@ -804,6 +808,364 @@ export class SqliteAdapter implements StoragePort {
       CREATE INDEX IF NOT EXISTS idx_client_omem ON client_snapshots(omem) WHERE omem > 10000000;
       CREATE INDEX IF NOT EXISTS idx_client_cmd ON client_snapshots(cmd);
       CREATE INDEX IF NOT EXISTS idx_client_captured_at_cmd ON client_snapshots(captured_at, cmd);
+
+      -- Anomaly Events Table
+      CREATE TABLE IF NOT EXISTS anomaly_events (
+        id TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        metric_type TEXT NOT NULL,
+        anomaly_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        value REAL NOT NULL,
+        baseline REAL NOT NULL,
+        std_dev REAL NOT NULL,
+        z_score REAL NOT NULL,
+        threshold REAL NOT NULL,
+        message TEXT NOT NULL,
+        correlation_id TEXT,
+        related_metrics TEXT,
+        resolved INTEGER DEFAULT 0,
+        resolved_at INTEGER,
+        duration_ms INTEGER,
+        source_host TEXT,
+        source_port INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_anomaly_events_timestamp ON anomaly_events(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_anomaly_events_severity ON anomaly_events(severity, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_anomaly_events_metric ON anomaly_events(metric_type, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_anomaly_events_correlation ON anomaly_events(correlation_id);
+      CREATE INDEX IF NOT EXISTS idx_anomaly_events_unresolved ON anomaly_events(resolved, timestamp DESC) WHERE resolved = 0;
+
+      -- Correlated Anomaly Groups Table
+      CREATE TABLE IF NOT EXISTS correlated_anomaly_groups (
+        correlation_id TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        pattern TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        diagnosis TEXT NOT NULL,
+        recommendations TEXT NOT NULL,
+        anomaly_count INTEGER NOT NULL,
+        metric_types TEXT NOT NULL,
+        source_host TEXT,
+        source_port INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_correlated_groups_timestamp ON correlated_anomaly_groups(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_correlated_groups_pattern ON correlated_anomaly_groups(pattern, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_correlated_groups_severity ON correlated_anomaly_groups(severity, timestamp DESC);
     `);
+  }
+
+  async saveAnomalyEvent(event: StoredAnomalyEvent): Promise<string> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      INSERT INTO anomaly_events (
+        id, timestamp, metric_type, anomaly_type, severity,
+        value, baseline, std_dev, z_score, threshold,
+        message, correlation_id, related_metrics,
+        resolved, resolved_at, duration_ms,
+        source_host, source_port
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        correlation_id = excluded.correlation_id,
+        resolved = excluded.resolved,
+        resolved_at = excluded.resolved_at,
+        duration_ms = excluded.duration_ms
+    `);
+
+    stmt.run(
+      event.id,
+      event.timestamp,
+      event.metricType,
+      event.anomalyType,
+      event.severity,
+      event.value,
+      event.baseline,
+      event.stdDev,
+      event.zScore,
+      event.threshold,
+      event.message,
+      event.correlationId || null,
+      event.relatedMetrics ? JSON.stringify(event.relatedMetrics) : null,
+      event.resolved ? 1 : 0,
+      event.resolvedAt || null,
+      event.durationMs || null,
+      event.sourceHost || null,
+      event.sourcePort || null
+    );
+
+    return event.id;
+  }
+
+  async saveAnomalyEvents(events: StoredAnomalyEvent[]): Promise<number> {
+    if (!this.db || events.length === 0) return 0;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO anomaly_events (
+        id, timestamp, metric_type, anomaly_type, severity,
+        value, baseline, std_dev, z_score, threshold,
+        message, correlation_id, related_metrics,
+        resolved, resolved_at, duration_ms,
+        source_host, source_port
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertMany = this.db.transaction((events: StoredAnomalyEvent[]) => {
+      for (const event of events) {
+        stmt.run(
+          event.id,
+          event.timestamp,
+          event.metricType,
+          event.anomalyType,
+          event.severity,
+          event.value,
+          event.baseline,
+          event.stdDev,
+          event.zScore,
+          event.threshold,
+          event.message,
+          event.correlationId || null,
+          event.relatedMetrics ? JSON.stringify(event.relatedMetrics) : null,
+          event.resolved ? 1 : 0,
+          event.resolvedAt || null,
+          event.durationMs || null,
+          event.sourceHost || null,
+          event.sourcePort || null
+        );
+      }
+    });
+
+    insertMany(events);
+    return events.length;
+  }
+
+  async getAnomalyEvents(options: AnomalyQueryOptions = {}): Promise<StoredAnomalyEvent[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (options.startTime) {
+      conditions.push('timestamp >= ?');
+      params.push(options.startTime);
+    }
+    if (options.endTime) {
+      conditions.push('timestamp <= ?');
+      params.push(options.endTime);
+    }
+    if (options.severity) {
+      conditions.push('severity = ?');
+      params.push(options.severity);
+    }
+    if (options.metricType) {
+      conditions.push('metric_type = ?');
+      params.push(options.metricType);
+    }
+    if (options.resolved !== undefined) {
+      conditions.push('resolved = ?');
+      params.push(options.resolved ? 1 : 0);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 100;
+    const offset = options.offset ?? 0;
+
+    const query = `
+      SELECT * FROM anomaly_events
+      ${whereClause}
+      ORDER BY timestamp DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    params.push(limit, offset);
+
+    const rows = this.db.prepare(query).all(...params) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      timestamp: row.timestamp,
+      metricType: row.metric_type,
+      anomalyType: row.anomaly_type,
+      severity: row.severity,
+      value: row.value,
+      baseline: row.baseline,
+      stdDev: row.std_dev,
+      zScore: row.z_score,
+      threshold: row.threshold,
+      message: row.message,
+      correlationId: row.correlation_id,
+      relatedMetrics: row.related_metrics ? JSON.parse(row.related_metrics) : undefined,
+      resolved: row.resolved === 1,
+      resolvedAt: row.resolved_at,
+      durationMs: row.duration_ms,
+      sourceHost: row.source_host,
+      sourcePort: row.source_port,
+    }));
+  }
+
+  async getAnomalyStats(startTime?: number, endTime?: number): Promise<AnomalyStats> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: number[] = [];
+
+    if (startTime) {
+      conditions.push('timestamp >= ?');
+      params.push(startTime);
+    }
+    if (endTime) {
+      conditions.push('timestamp <= ?');
+      params.push(endTime);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const totalResult = this.db
+      .prepare(`SELECT COUNT(*) as count FROM anomaly_events ${whereClause}`)
+      .get(...params) as { count: number };
+
+    const severityResult = this.db
+      .prepare(`SELECT severity, COUNT(*) as count FROM anomaly_events ${whereClause} GROUP BY severity`)
+      .all(...params) as Array<{ severity: string; count: number }>;
+
+    const metricResult = this.db
+      .prepare(`SELECT metric_type, COUNT(*) as count FROM anomaly_events ${whereClause} GROUP BY metric_type`)
+      .all(...params) as Array<{ metric_type: string; count: number }>;
+
+    const unresolvedResult = this.db
+      .prepare(`SELECT COUNT(*) as count FROM anomaly_events ${whereClause ? whereClause + ' AND' : 'WHERE'} resolved = 0`)
+      .get(...params) as { count: number };
+
+    const bySeverity: Record<string, number> = {};
+    for (const row of severityResult) {
+      bySeverity[row.severity] = row.count;
+    }
+
+    const byMetric: Record<string, number> = {};
+    for (const row of metricResult) {
+      byMetric[row.metric_type] = row.count;
+    }
+
+    return {
+      totalEvents: totalResult.count,
+      bySeverity,
+      byMetric,
+      byPattern: {},
+      unresolvedCount: unresolvedResult.count,
+    };
+  }
+
+  async resolveAnomaly(id: string, resolvedAt: number): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      UPDATE anomaly_events
+      SET resolved = 1, resolved_at = ?, duration_ms = ? - timestamp
+      WHERE id = ? AND resolved = 0
+    `);
+
+    const result = stmt.run(resolvedAt, resolvedAt, id);
+    return result.changes > 0;
+  }
+
+  async pruneOldAnomalyEvents(cutoffTimestamp: number): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = this.db.prepare('DELETE FROM anomaly_events WHERE timestamp < ?').run(cutoffTimestamp);
+    return result.changes;
+  }
+
+  async saveCorrelatedGroup(group: StoredCorrelatedGroup): Promise<string> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      INSERT INTO correlated_anomaly_groups (
+        correlation_id, timestamp, pattern, severity,
+        diagnosis, recommendations, anomaly_count, metric_types,
+        source_host, source_port
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(correlation_id) DO UPDATE SET
+        diagnosis = excluded.diagnosis,
+        recommendations = excluded.recommendations,
+        anomaly_count = excluded.anomaly_count
+    `);
+
+    stmt.run(
+      group.correlationId,
+      group.timestamp,
+      group.pattern,
+      group.severity,
+      group.diagnosis,
+      JSON.stringify(group.recommendations),
+      group.anomalyCount,
+      JSON.stringify(group.metricTypes),
+      group.sourceHost || null,
+      group.sourcePort || null
+    );
+
+    return group.correlationId;
+  }
+
+  async getCorrelatedGroups(options: AnomalyQueryOptions = {}): Promise<StoredCorrelatedGroup[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (options.startTime) {
+      conditions.push('timestamp >= ?');
+      params.push(options.startTime);
+    }
+    if (options.endTime) {
+      conditions.push('timestamp <= ?');
+      params.push(options.endTime);
+    }
+    if (options.severity) {
+      conditions.push('severity = ?');
+      params.push(options.severity);
+    }
+    if (options.pattern) {
+      conditions.push('pattern = ?');
+      params.push(options.pattern);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 50;
+    const offset = options.offset ?? 0;
+
+    const query = `
+      SELECT * FROM correlated_anomaly_groups
+      ${whereClause}
+      ORDER BY timestamp DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    params.push(limit, offset);
+
+    const rows = this.db.prepare(query).all(...params) as any[];
+
+    return rows.map(row => ({
+      correlationId: row.correlation_id,
+      timestamp: row.timestamp,
+      pattern: row.pattern,
+      severity: row.severity,
+      diagnosis: row.diagnosis,
+      recommendations: JSON.parse(row.recommendations),
+      anomalyCount: row.anomaly_count,
+      metricTypes: JSON.parse(row.metric_types),
+      sourceHost: row.source_host,
+      sourcePort: row.source_port,
+    }));
+  }
+
+  async pruneOldCorrelatedGroups(cutoffTimestamp: number): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = this.db.prepare('DELETE FROM correlated_anomaly_groups WHERE timestamp < ?').run(cutoffTimestamp);
+    return result.changes;
   }
 }

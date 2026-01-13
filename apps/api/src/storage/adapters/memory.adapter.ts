@@ -7,11 +7,17 @@ import {
   ClientSnapshotQueryOptions,
   ClientTimeSeriesPoint,
   ClientAnalyticsStats,
+  StoredAnomalyEvent,
+  StoredCorrelatedGroup,
+  AnomalyQueryOptions,
+  AnomalyStats,
 } from '../../common/interfaces/storage-port.interface';
 
 export class MemoryAdapter implements StoragePort {
   private aclEntries: StoredAclEntry[] = [];
   private clientSnapshots: StoredClientSnapshot[] = [];
+  private anomalyEvents: StoredAnomalyEvent[] = [];
+  private correlatedGroups: StoredCorrelatedGroup[] = [];
   private idCounter = 1;
   private ready: boolean = false;
 
@@ -404,5 +410,97 @@ export class MemoryAdapter implements StoragePort {
     const before = this.clientSnapshots.length;
     this.clientSnapshots = this.clientSnapshots.filter((c) => c.capturedAt >= olderThanTimestamp);
     return before - this.clientSnapshots.length;
+  }
+
+  async saveAnomalyEvent(event: StoredAnomalyEvent): Promise<string> {
+    this.anomalyEvents.push(event);
+    return event.id;
+  }
+
+  async saveAnomalyEvents(events: StoredAnomalyEvent[]): Promise<number> {
+    this.anomalyEvents.push(...events);
+    return events.length;
+  }
+
+  async getAnomalyEvents(options: AnomalyQueryOptions = {}): Promise<StoredAnomalyEvent[]> {
+    let filtered = [...this.anomalyEvents];
+
+    if (options.startTime) filtered = filtered.filter(e => e.timestamp >= options.startTime!);
+    if (options.endTime) filtered = filtered.filter(e => e.timestamp <= options.endTime!);
+    if (options.severity) filtered = filtered.filter(e => e.severity === options.severity);
+    if (options.metricType) filtered = filtered.filter(e => e.metricType === options.metricType);
+    if (options.resolved !== undefined) filtered = filtered.filter(e => e.resolved === options.resolved);
+
+    return filtered
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(options.offset ?? 0, (options.offset ?? 0) + (options.limit ?? 100));
+  }
+
+  async getAnomalyStats(startTime?: number, endTime?: number): Promise<AnomalyStats> {
+    let filtered = [...this.anomalyEvents];
+    if (startTime) filtered = filtered.filter(e => e.timestamp >= startTime);
+    if (endTime) filtered = filtered.filter(e => e.timestamp <= endTime);
+
+    const bySeverity: Record<string, number> = {};
+    const byMetric: Record<string, number> = {};
+
+    for (const e of filtered) {
+      bySeverity[e.severity] = (bySeverity[e.severity] ?? 0) + 1;
+      byMetric[e.metricType] = (byMetric[e.metricType] ?? 0) + 1;
+    }
+
+    return {
+      totalEvents: filtered.length,
+      bySeverity,
+      byMetric,
+      byPattern: {},
+      unresolvedCount: filtered.filter(e => !e.resolved).length,
+    };
+  }
+
+  async resolveAnomaly(id: string, resolvedAt: number): Promise<boolean> {
+    const event = this.anomalyEvents.find(e => e.id === id);
+    if (event && !event.resolved) {
+      event.resolved = true;
+      event.resolvedAt = resolvedAt;
+      event.durationMs = resolvedAt - event.timestamp;
+      return true;
+    }
+    return false;
+  }
+
+  async pruneOldAnomalyEvents(cutoffTimestamp: number): Promise<number> {
+    const before = this.anomalyEvents.length;
+    this.anomalyEvents = this.anomalyEvents.filter(e => e.timestamp >= cutoffTimestamp);
+    return before - this.anomalyEvents.length;
+  }
+
+  async saveCorrelatedGroup(group: StoredCorrelatedGroup): Promise<string> {
+    const existing = this.correlatedGroups.findIndex(g => g.correlationId === group.correlationId);
+    if (existing >= 0) {
+      this.correlatedGroups[existing] = group;
+    } else {
+      this.correlatedGroups.push(group);
+    }
+    return group.correlationId;
+  }
+
+  async getCorrelatedGroups(options: AnomalyQueryOptions = {}): Promise<StoredCorrelatedGroup[]> {
+    let filtered = [...this.correlatedGroups];
+
+    if (options.startTime) filtered = filtered.filter(g => g.timestamp >= options.startTime!);
+    if (options.endTime) filtered = filtered.filter(g => g.timestamp <= options.endTime!);
+    if (options.severity) filtered = filtered.filter(g => g.severity === options.severity);
+    if (options.pattern) filtered = filtered.filter(g => g.pattern === options.pattern);
+
+    return filtered
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(options.offset ?? 0, (options.offset ?? 0) + (options.limit ?? 50));
+  }
+
+  async pruneOldCorrelatedGroups(cutoffTimestamp: number): Promise<number> {
+    const before = this.correlatedGroups.length;
+    this.correlatedGroups = this.correlatedGroups.filter(g => g.timestamp >= cutoffTimestamp);
+    return before - this.correlatedGroups.length;
   }
 }

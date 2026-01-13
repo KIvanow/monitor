@@ -150,6 +150,95 @@ export class Correlator {
           'Consider implementing auto-scaling if cloud-hosted',
         ],
       },
+      // Single metric patterns - catch all individual anomalies
+      {
+        pattern: AnomalyPattern.TRAFFIC_BURST,
+        requiredMetrics: [MetricType.OPS_PER_SEC],
+        diagnosis: 'High operations spike detected',
+        recommendations: [
+          'Review command patterns in slow log and audit trail',
+          'Check for batch operations or bulk imports',
+          'Monitor client activity for unusual patterns',
+          'Consider if this is expected traffic or an anomaly',
+        ],
+      },
+      {
+        pattern: AnomalyPattern.TRAFFIC_BURST,
+        requiredMetrics: [MetricType.INPUT_KBPS],
+        diagnosis: 'High input traffic detected',
+        recommendations: [
+          'Check for large data imports or writes',
+          'Review client write patterns',
+          'Monitor network bandwidth utilization',
+          'Verify this matches expected application behavior',
+        ],
+      },
+      {
+        pattern: AnomalyPattern.TRAFFIC_BURST,
+        requiredMetrics: [MetricType.OUTPUT_KBPS],
+        diagnosis: 'High output traffic detected',
+        recommendations: [
+          'Check for large data exports or reads',
+          'Review client read patterns',
+          'Monitor network bandwidth utilization',
+          'Consider implementing result pagination if needed',
+        ],
+      },
+      {
+        pattern: AnomalyPattern.MEMORY_PRESSURE,
+        requiredMetrics: [MetricType.FRAGMENTATION_RATIO],
+        diagnosis: 'Memory fragmentation spike detected',
+        recommendations: [
+          'Monitor memory fragmentation trends over time',
+          'Consider running MEMORY PURGE if fragmentation persists',
+          'Review allocation patterns that may cause fragmentation',
+          'Plan for instance restart during maintenance window if needed',
+        ],
+      },
+      {
+        pattern: AnomalyPattern.MEMORY_PRESSURE,
+        requiredMetrics: [MetricType.EVICTED_KEYS],
+        diagnosis: 'Key eviction spike detected',
+        recommendations: [
+          'Check if maxmemory limit is being reached',
+          'Review eviction policy (volatile-lru, allkeys-lru, etc.)',
+          'Identify which keys are being evicted',
+          'Consider increasing memory or optimizing data retention',
+        ],
+      },
+      {
+        pattern: AnomalyPattern.CONNECTION_LEAK,
+        requiredMetrics: [MetricType.CONNECTIONS],
+        diagnosis: 'Connection count spike detected',
+        recommendations: [
+          'Review client connection patterns',
+          'Check for connection pool exhaustion',
+          'Monitor idle connections',
+          'Verify connection cleanup in client applications',
+        ],
+      },
+      {
+        pattern: AnomalyPattern.SLOW_QUERIES,
+        requiredMetrics: [MetricType.BLOCKED_CLIENTS],
+        diagnosis: 'Blocked clients detected',
+        recommendations: [
+          'Check for blocking operations (BLPOP, BRPOP, etc.)',
+          'Review command execution times',
+          'Monitor for potential deadlocks',
+          'Consider timeout configurations',
+        ],
+      },
+      {
+        pattern: AnomalyPattern.CACHE_THRASHING,
+        requiredMetrics: [MetricType.KEYSPACE_MISSES],
+        diagnosis: 'High cache miss rate detected',
+        recommendations: [
+          'Review cache hit ratio trends',
+          'Check if working set has changed',
+          'Analyze access patterns for optimization',
+          'Consider cache warming strategies',
+        ],
+      },
     ];
   }
 

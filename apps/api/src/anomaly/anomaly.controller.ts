@@ -14,26 +14,62 @@ export class AnomalyController {
   constructor(private readonly anomalyService: AnomalyService) {}
 
   @Get('events')
-  getEvents(
+  async getEvents(
     @Query('limit') limit?: string,
     @Query('metricType') metricType?: MetricType,
-  ): AnomalyEvent[] {
+    @Query('startTime') startTime?: string,
+    @Query('endTime') endTime?: string,
+  ): Promise<AnomalyEvent[]> {
     const parsedLimit = limit ? parseInt(limit, 10) : 100;
-    return this.anomalyService.getRecentEvents(parsedLimit, metricType);
+    const parsedStartTime = startTime ? parseInt(startTime, 10) : undefined;
+    const parsedEndTime = endTime ? parseInt(endTime, 10) : undefined;
+
+    // If no time range specified, default to last 24 hours to include persisted data
+    const defaultStartTime = parsedStartTime || (Date.now() - 24 * 60 * 60 * 1000);
+
+    return this.anomalyService.getRecentAnomalies(
+      defaultStartTime,
+      parsedEndTime,
+      undefined,
+      metricType,
+      parsedLimit
+    );
   }
 
   @Get('groups')
-  getGroups(
+  async getGroups(
     @Query('limit') limit?: string,
     @Query('pattern') pattern?: AnomalyPattern,
-  ): CorrelatedAnomalyGroup[] {
+    @Query('startTime') startTime?: string,
+    @Query('endTime') endTime?: string,
+  ): Promise<CorrelatedAnomalyGroup[]> {
     const parsedLimit = limit ? parseInt(limit, 10) : 50;
-    return this.anomalyService.getRecentGroups(parsedLimit, pattern);
+    const parsedStartTime = startTime ? parseInt(startTime, 10) : undefined;
+    const parsedEndTime = endTime ? parseInt(endTime, 10) : undefined;
+
+    // If no time range specified, default to last 24 hours to include persisted data
+    const defaultStartTime = parsedStartTime || (Date.now() - 24 * 60 * 60 * 1000);
+
+    return this.anomalyService.getRecentCorrelatedGroups(
+      defaultStartTime,
+      parsedEndTime,
+      pattern,
+      parsedLimit
+    );
   }
 
   @Get('summary')
-  getSummary(): AnomalySummary {
-    return this.anomalyService.getSummary();
+  async getSummary(
+    @Query('startTime') startTime?: string,
+    @Query('endTime') endTime?: string,
+  ): Promise<AnomalySummary> {
+    const parsedStartTime = startTime ? parseInt(startTime, 10) : undefined;
+    const parsedEndTime = endTime ? parseInt(endTime, 10) : undefined;
+
+    // Default to last 24 hours to include persisted data
+    const defaultStartTime = parsedStartTime || (Date.now() - 24 * 60 * 60 * 1000);
+
+    return this.anomalyService.getSummary(defaultStartTime, parsedEndTime);
   }
 
   @Get('buffers')

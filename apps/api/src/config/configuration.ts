@@ -32,10 +32,18 @@ export interface AiConfig {
   valkeyDocsPath: string;
 }
 
+export interface AnomalyConfig {
+  enabled: boolean;
+  pollIntervalMs: number;
+  retentionDays: number;
+  cacheTtlMs: number;
+}
+
 export interface AppConfig {
   database: DatabaseConfig;
   storage: StorageConfig;
   ai: AiConfig;
+  anomaly: AnomalyConfig;
 }
 
 export default (): AppConfig => ({
@@ -69,5 +77,11 @@ export default (): AppConfig => ({
     useLlmClassification: process.env.AI_USE_LLM_CLASSIFICATION === 'true',
     lancedbPath: process.env.LANCEDB_PATH || './data/lancedb',
     valkeyDocsPath: process.env.VALKEY_DOCS_PATH || './data/valkey-docs',
+  },
+  anomaly: {
+    enabled: process.env.ANOMALY_DETECTION_ENABLED !== 'false',
+    pollIntervalMs: parseInt(process.env.ANOMALY_POLL_INTERVAL_MS || '1000', 10),
+    retentionDays: parseInt(process.env.ANOMALY_RETENTION_DAYS || '30', 10),
+    cacheTtlMs: parseInt(process.env.ANOMALY_CACHE_TTL_MS || '3600000', 10),
   },
 });
