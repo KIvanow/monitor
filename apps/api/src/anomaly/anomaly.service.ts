@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Inject } from '@nest
 import { ConfigService } from '@nestjs/config';
 import { DatabasePort } from '../common/interfaces/database-port.interface';
 import { StoragePort, StoredAnomalyEvent, StoredCorrelatedGroup } from '../common/interfaces/storage-port.interface';
+import { PrometheusService } from '../prometheus/prometheus.service';
 import { MetricBuffer } from './metric-buffer';
 import { SpikeDetector } from './spike-detector';
 import { Correlator } from './correlator';
@@ -26,6 +27,7 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AnomalyService.name);
   private pollInterval: NodeJS.Timeout | null = null;
   private correlationInterval: NodeJS.Timeout | null = null;
+  private summaryInterval: NodeJS.Timeout | null = null;
 
   private buffers = new Map<MetricType, MetricBuffer>();
   private detectors = new Map<MetricType, SpikeDetector>();
@@ -40,6 +42,7 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
   private readonly pollIntervalMs = 1000;
   private readonly correlationIntervalMs = 5000;
   private readonly cacheTtlMs: number;
+  private readonly prometheusSummaryIntervalMs: number;
 
   constructor(
     @Inject('DATABASE_CLIENT')
@@ -47,17 +50,20 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
     @Inject('STORAGE_CLIENT')
     private readonly storage: StoragePort,
     private readonly configService: ConfigService,
+    private readonly prometheusService: PrometheusService,
   ) {
     this.correlator = new Correlator(this.correlationIntervalMs);
     this.metricExtractors = this.initializeMetricExtractors();
     this.initializeBuffersAndDetectors();
     this.cacheTtlMs = this.configService.get<number>('anomaly.cacheTtlMs') ?? 3600000;
+    this.prometheusSummaryIntervalMs = this.configService.get<number>('anomaly.prometheusSummaryIntervalMs') ?? 30000;
   }
 
   onModuleInit() {
     this.logger.log('Starting anomaly detection service...');
     this.startPolling();
     this.startCorrelation();
+    this.startPrometheusSummaryUpdates();
   }
 
   onModuleDestroy() {
@@ -67,6 +73,9 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
     }
     if (this.correlationInterval) {
       clearInterval(this.correlationInterval);
+    }
+    if (this.summaryInterval) {
+      clearInterval(this.summaryInterval);
     }
   }
 
@@ -237,6 +246,8 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
       this.recentAnomalies = this.recentAnomalies.slice(-this.maxRecentEvents);
     }
 
+    this.prometheusService.incrementAnomalyEvent(anomaly.severity, anomaly.metricType, anomaly.anomalyType);
+
     try {
       await this.storage.saveAnomalyEvent(this.toStoredAnomalyEvent(anomaly));
     } catch (err) {
@@ -266,6 +277,8 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(
           `Pattern detected: ${group.pattern} (${group.severity}) - ${group.diagnosis}`
         );
+
+        this.prometheusService.incrementCorrelatedGroup(group.pattern, group.severity);
 
         const storedGroup: StoredCorrelatedGroup = {
           correlationId: group.correlationId,
@@ -539,5 +552,43 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
     const beforeCount = this.recentAnomalies.length;
     this.recentAnomalies = this.recentAnomalies.filter(a => !a.resolved);
     return beforeCount - this.recentAnomalies.length;
+  }
+
+  private startPrometheusSummaryUpdates(): void {
+    this.summaryInterval = setInterval(() => {
+      this.updatePrometheusSummary().catch(err =>
+        this.logger.error('Failed to update Prometheus summary:', err)
+      );
+    }, this.prometheusSummaryIntervalMs);
+
+    this.updatePrometheusSummary().catch(err =>
+      this.logger.error('Failed to update initial Prometheus summary:', err)
+    );
+  }
+
+  private async updatePrometheusSummary(): Promise<void> {
+    const oneHourAgo = Date.now() - 3600000;
+    const bySeverity: Record<string, number> = { info: 0, warning: 0, critical: 0 };
+    const byMetric: Record<string, number> = {};
+    const unresolvedBySeverity: Record<string, number> = { info: 0, warning: 0, critical: 0 };
+    const byPattern: Record<string, number> = {};
+
+    for (const a of this.recentAnomalies) {
+      if (a.timestamp < oneHourAgo) continue;
+      bySeverity[a.severity] = (bySeverity[a.severity] ?? 0) + 1;
+      byMetric[a.metricType] = (byMetric[a.metricType] ?? 0) + 1;
+      if (!a.resolved) unresolvedBySeverity[a.severity] = (unresolvedBySeverity[a.severity] ?? 0) + 1;
+    }
+
+    for (const g of this.recentGroups) {
+      if (g.timestamp >= oneHourAgo) byPattern[g.pattern] = (byPattern[g.pattern] ?? 0) + 1;
+    }
+
+    this.prometheusService.updateAnomalySummary({ bySeverity, byMetric, byPattern, unresolvedBySeverity });
+
+    const bufferStats = this.getBufferStats().map(s => ({
+      metricType: s.metricType, mean: s.mean, stdDev: s.stdDev, ready: s.isReady,
+    }));
+    this.prometheusService.updateAnomalyBufferStats(bufferStats);
   }
 }

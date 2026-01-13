@@ -1,0 +1,92 @@
+groups:
+  - name: betterdb-anomaly-alerts
+    rules:
+      # Critical anomaly detected
+      - alert: BetterDBCriticalAnomaly
+        expr: increase(betterdb_anomaly_events_total{severity="critical"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical anomaly detected on {{ $labels.instance }}"
+          description: "BetterDB detected a critical anomaly for metric {{ $labels.metric_type }}. Check the Anomaly Dashboard for details."
+
+      # Multiple warnings in short period
+      - alert: BetterDBWarningSpike
+        expr: increase(betterdb_anomaly_events_total{severity="warning"}[5m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multiple warning anomalies on {{ $labels.instance }}"
+          description: "{{ $value }} warning-level anomalies detected in the last 5 minutes."
+
+      # Memory pressure pattern
+      - alert: BetterDBMemoryPressure
+        expr: increase(betterdb_correlated_groups_total{pattern="memory_pressure"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memory pressure detected on {{ $labels.instance }}"
+          description: "BetterDB detected memory pressure pattern. Memory usage and evictions are elevated."
+
+      # Auth attack pattern
+      - alert: BetterDBAuthAnomaly
+        expr: increase(betterdb_correlated_groups_total{pattern="auth_attack"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Authentication anomaly on {{ $labels.instance }}"
+          description: "Multiple ACL denied events detected. Possible brute force attempt or misconfigured client."
+
+      # Connection leak pattern
+      - alert: BetterDBConnectionLeak
+        expr: increase(betterdb_correlated_groups_total{pattern="connection_leak"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Possible connection leak on {{ $labels.instance }}"
+          description: "Connections increasing without proportional command activity."
+
+      # Detection system not ready
+      - alert: BetterDBAnomalyDetectionWarming
+        expr: (sum(betterdb_anomaly_buffer_ready) / count(betterdb_anomaly_buffer_ready)) < 1
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Anomaly detection warming up on {{ $labels.instance }}"
+          description: "Some metric buffers are still collecting baseline data. Detection accuracy may be reduced."
+
+      # High number of unresolved critical anomalies
+      - alert: BetterDBUnresolvedCriticalAnomalies
+        expr: betterdb_anomaly_events_current{severity="critical"} > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multiple unresolved critical anomalies on {{ $labels.instance }}"
+          description: "{{ $value }} critical anomalies remain unresolved. Review and resolve to prevent alert fatigue."
+
+      # Traffic burst pattern
+      - alert: BetterDBTrafficBurst
+        expr: increase(betterdb_correlated_groups_total{pattern="traffic_burst"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Traffic burst detected on {{ $labels.instance }}"
+          description: "Unusual spike in operations or network traffic detected."
+
+      # Persistent anomalies
+      - alert: BetterDBPersistentAnomalies
+        expr: betterdb_anomaly_by_severity{severity!="info"} > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persistent anomalies on {{ $labels.instance }}"
+          description: "{{ $value }} anomalies detected in the last hour. System may be unstable."

@@ -37,6 +37,7 @@ export interface AnomalyConfig {
   pollIntervalMs: number;
   retentionDays: number;
   cacheTtlMs: number;
+  prometheusSummaryIntervalMs: number;
 }
 
 export interface AppConfig {
@@ -83,5 +84,6 @@ export default (): AppConfig => ({
     pollIntervalMs: parseInt(process.env.ANOMALY_POLL_INTERVAL_MS || '1000', 10),
     retentionDays: parseInt(process.env.ANOMALY_RETENTION_DAYS || '30', 10),
     cacheTtlMs: parseInt(process.env.ANOMALY_CACHE_TTL_MS || '3600000', 10),
+    prometheusSummaryIntervalMs: parseInt(process.env.ANOMALY_PROMETHEUS_INTERVAL_MS || '30000', 10),
   },
 });

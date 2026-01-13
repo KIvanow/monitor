@@ -97,6 +97,18 @@ export class PrometheusService implements OnModuleInit {
   // Poll Duration Metric
   private pollDuration: Histogram;
 
+  // Anomaly Detection Metrics
+  private anomalyEventsTotal: Counter;
+  private anomalyEventsCurrent: Gauge;
+  private anomalyBySeverity: Gauge;
+  private anomalyByMetric: Gauge;
+  private correlatedGroupsTotal: Counter;
+  private correlatedGroupsBySeverity: Gauge;
+  private correlatedGroupsByPattern: Gauge;
+  private anomalyDetectionBufferReady: Gauge;
+  private anomalyDetectionBufferMean: Gauge;
+  private anomalyDetectionBufferStdDev: Gauge;
+
   constructor(
     @Inject('STORAGE_CLIENT') private storage: StoragePort,
     @Inject('DATABASE_CLIENT') private dbClient: DatabasePort,
@@ -217,6 +229,28 @@ export class PrometheusService implements OnModuleInit {
       buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
       registers: [this.registry],
     });
+
+    // Anomaly detection
+    this.anomalyEventsTotal = new Counter({
+      name: 'betterdb_anomaly_events_total',
+      help: 'Total anomaly events detected',
+      labelNames: ['severity', 'metric_type', 'anomaly_type'],
+      registers: [this.registry],
+    });
+    this.correlatedGroupsTotal = new Counter({
+      name: 'betterdb_correlated_groups_total',
+      help: 'Total correlated anomaly groups',
+      labelNames: ['pattern', 'severity'],
+      registers: [this.registry],
+    });
+    this.anomalyEventsCurrent = this.createGauge('anomaly_events_current', 'Unresolved anomalies', ['severity']);
+    this.anomalyBySeverity = this.createGauge('anomaly_by_severity', 'Anomalies in last hour by severity', ['severity']);
+    this.anomalyByMetric = this.createGauge('anomaly_by_metric', 'Anomalies in last hour by metric', ['metric_type']);
+    this.correlatedGroupsBySeverity = this.createGauge('correlated_groups_by_severity', 'Groups in last hour by severity', ['severity']);
+    this.correlatedGroupsByPattern = this.createGauge('correlated_groups_by_pattern', 'Groups in last hour by pattern', ['pattern']);
+    this.anomalyDetectionBufferReady = this.createGauge('anomaly_buffer_ready', 'Buffer ready state (1=ready, 0=warming)', ['metric_type']);
+    this.anomalyDetectionBufferMean = this.createGauge('anomaly_buffer_mean', 'Rolling mean for anomaly detection', ['metric_type']);
+    this.anomalyDetectionBufferStdDev = this.createGauge('anomaly_buffer_stddev', 'Rolling stddev for anomaly detection', ['metric_type']);
   }
 
   async updateMetrics(): Promise<void> {
@@ -533,5 +567,46 @@ export class PrometheusService implements OnModuleInit {
 
   startPollTimer(service: string): () => void {
     return this.pollDuration.startTimer({ service });
+  }
+
+  incrementAnomalyEvent(severity: string, metricType: string, anomalyType: string): void {
+    this.anomalyEventsTotal.inc({ severity, metric_type: metricType, anomaly_type: anomalyType });
+  }
+
+  incrementCorrelatedGroup(pattern: string, severity: string): void {
+    this.correlatedGroupsTotal.inc({ pattern, severity });
+  }
+
+  updateAnomalySummary(summary: {
+    bySeverity: Record<string, number>;
+    byMetric: Record<string, number>;
+    byPattern: Record<string, number>;
+    unresolvedBySeverity: Record<string, number>;
+  }): void {
+    // Severity labels are fixed - set directly without reset
+    for (const sev of ['info', 'warning', 'critical']) {
+      this.anomalyBySeverity.labels(sev).set(summary.bySeverity[sev] ?? 0);
+      this.anomalyEventsCurrent.labels(sev).set(summary.unresolvedBySeverity[sev] ?? 0);
+    }
+
+    // Dynamic labels need reset to clear stale entries
+    this.anomalyByMetric.reset();
+    this.correlatedGroupsByPattern.reset();
+
+    for (const [metric, count] of Object.entries(summary.byMetric)) {
+      this.anomalyByMetric.labels(metric).set(count);
+    }
+    for (const [pattern, count] of Object.entries(summary.byPattern)) {
+      this.correlatedGroupsByPattern.labels(pattern).set(count);
+    }
+  }
+
+  updateAnomalyBufferStats(buffers: Array<{ metricType: string; mean: number; stdDev: number; ready: boolean }>): void {
+    // Buffer metric types are fixed per-session, no reset needed
+    for (const buf of buffers) {
+      this.anomalyDetectionBufferReady.labels(buf.metricType).set(buf.ready ? 1 : 0);
+      this.anomalyDetectionBufferMean.labels(buf.metricType).set(buf.mean);
+      this.anomalyDetectionBufferStdDev.labels(buf.metricType).set(buf.stdDev);
+    }
   }
 }

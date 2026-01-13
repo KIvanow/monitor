@@ -205,6 +205,8 @@ docker rm -f betterdb-monitor 2>/dev/null; docker run -d \
 | `STORAGE_URL` | Conditional | - | PostgreSQL connection URL (required if `STORAGE_TYPE=postgres`) |
 | `PORT` | No | `3001` | Application HTTP port |
 | `NODE_ENV` | No | `production` | Node environment |
+| `ANOMALY_DETECTION_ENABLED` | No | `true` | Enable anomaly detection |
+| `ANOMALY_PROMETHEUS_INTERVAL_MS` | No | `30000` | Prometheus summary update interval (ms) |
 
 ### Accessing the Application
 
