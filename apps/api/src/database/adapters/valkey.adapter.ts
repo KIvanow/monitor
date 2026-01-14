@@ -413,4 +413,8 @@ export class ValkeyAdapter implements DatabasePort {
   async getLastSaveTime(): Promise<number> {
     return await this.client.lastsave();
   }
+
+  getClient(): unknown {
+    return this.client;
+  }
 }

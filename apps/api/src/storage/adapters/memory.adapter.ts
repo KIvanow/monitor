@@ -11,6 +11,9 @@ import {
   StoredCorrelatedGroup,
   AnomalyQueryOptions,
   AnomalyStats,
+  KeyPatternSnapshot,
+  KeyPatternQueryOptions,
+  KeyAnalyticsSummary,
 } from '../../common/interfaces/storage-port.interface';
 
 export class MemoryAdapter implements StoragePort {
@@ -502,5 +505,30 @@ export class MemoryAdapter implements StoragePort {
     const before = this.correlatedGroups.length;
     this.correlatedGroups = this.correlatedGroups.filter(g => g.timestamp >= cutoffTimestamp);
     return before - this.correlatedGroups.length;
+  }
+
+  async saveKeyPatternSnapshots(_snapshots: KeyPatternSnapshot[]): Promise<number> {
+    throw new Error('Key analytics not supported in memory adapter');
+  }
+
+  async getKeyPatternSnapshots(_options?: KeyPatternQueryOptions): Promise<KeyPatternSnapshot[]> {
+    throw new Error('Key analytics not supported in memory adapter');
+  }
+
+  async getKeyAnalyticsSummary(_startTime?: number, _endTime?: number): Promise<KeyAnalyticsSummary | null> {
+    throw new Error('Key analytics not supported in memory adapter');
+  }
+
+  async getKeyPatternTrends(_pattern: string, _startTime: number, _endTime: number): Promise<Array<{
+    timestamp: number;
+    keyCount: number;
+    memoryBytes: number;
+    staleCount: number;
+  }>> {
+    throw new Error('Key analytics not supported in memory adapter');
+  }
+
+  async pruneOldKeyPatternSnapshots(_cutoffTimestamp: number): Promise<number> {
+    throw new Error('Key analytics not supported in memory adapter');
   }
 }

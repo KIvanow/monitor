@@ -87,6 +87,12 @@ export interface AnomalyStats {
   unresolvedCount: number;
 }
 
+export {
+  KeyPatternSnapshot,
+  KeyPatternQueryOptions,
+  KeyAnalyticsSummary,
+} from '@valkey-monitor/shared';
+
 export interface StoragePort {
   initialize(): Promise<void>;
   close(): Promise<void>;
@@ -115,4 +121,16 @@ export interface StoragePort {
   saveCorrelatedGroup(group: StoredCorrelatedGroup): Promise<string>;
   getCorrelatedGroups(options?: AnomalyQueryOptions): Promise<StoredCorrelatedGroup[]>;
   pruneOldCorrelatedGroups(cutoffTimestamp: number): Promise<number>;
+
+  // Key Analytics Methods
+  saveKeyPatternSnapshots(snapshots: KeyPatternSnapshot[]): Promise<number>;
+  getKeyPatternSnapshots(options?: KeyPatternQueryOptions): Promise<KeyPatternSnapshot[]>;
+  getKeyAnalyticsSummary(startTime?: number, endTime?: number): Promise<KeyAnalyticsSummary | null>;
+  getKeyPatternTrends(pattern: string, startTime: number, endTime: number): Promise<Array<{
+    timestamp: number;
+    keyCount: number;
+    memoryBytes: number;
+    staleCount: number;
+  }>>;
+  pruneOldKeyPatternSnapshots(cutoffTimestamp: number): Promise<number>;
 }

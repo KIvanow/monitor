@@ -61,4 +61,5 @@ export interface DatabasePort {
   getConfigValues(pattern: string): Promise<ConfigGetResponse>;
   getDbSize(): Promise<number>;
   getLastSaveTime(): Promise<number>;
+  getClient(): unknown;
 }

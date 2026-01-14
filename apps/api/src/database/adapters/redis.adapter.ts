@@ -178,4 +178,8 @@ export class RedisAdapter implements DatabasePort {
   async getLastSaveTime(): Promise<number> {
     throw new Error('Redis adapter not yet implemented');
   }
+
+  getClient(): unknown {
+    throw new Error('Redis adapter not yet implemented');
+  }
 }

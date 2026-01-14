@@ -22,7 +22,18 @@ Contact sales@betterdb.com for commercial licensing options.
 
 ## Features in This Directory
 
+### License (`/license`)
+License validation and feature gating infrastructure.
+- Provides `LicenseGuard` and `@RequiresFeature()` decorator
+- Checks `BETTERDB_LICENSE_KEY` env var
+
+### Key Analytics (`/key-analytics`)
+Key pattern analysis with memory, TTL, and access frequency metrics.
+- Samples keys via SCAN and groups by extracted patterns
+- Tracks stale keys, hot/cold classification, expiring keys
+- Tier: Pro and above
+
 ### AI Assistant (`/ai`)
 Natural language interface for querying monitoring data and Valkey documentation.
 - Requires: Ollama with Qwen 2.5 7B + nomic-embed-text
-- Tier: Pro and above
+- Tier: Enterprise

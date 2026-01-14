@@ -12,6 +12,9 @@ import {
   StoredCorrelatedGroup,
   AnomalyQueryOptions,
   AnomalyStats,
+  KeyPatternSnapshot,
+  KeyPatternQueryOptions,
+  KeyAnalyticsSummary,
 } from '../../common/interfaces/storage-port.interface';
 
 export interface PostgresAdapterConfig {
@@ -22,7 +25,7 @@ export class PostgresAdapter implements StoragePort {
   private pool: Pool | null = null;
   private ready: boolean = false;
 
-  constructor(private config: PostgresAdapterConfig) {}
+  constructor(private config: PostgresAdapterConfig) { }
 
   async initialize(): Promise<void> {
     try {
@@ -227,9 +230,9 @@ export class PostgresAdapter implements StoragePort {
     const timeRange =
       timeRangeResult.rows[0].earliest !== null && timeRangeResult.rows[0].latest !== null
         ? {
-            earliest: parseInt(timeRangeResult.rows[0].earliest),
-            latest: parseInt(timeRangeResult.rows[0].latest),
-          }
+          earliest: parseInt(timeRangeResult.rows[0].earliest),
+          latest: parseInt(timeRangeResult.rows[0].latest),
+        }
         : null;
 
     return {
@@ -608,9 +611,9 @@ export class PostgresAdapter implements StoragePort {
     const timeRange =
       timeRangeResult.rows[0].earliest !== null && timeRangeResult.rows[0].latest !== null
         ? {
-            earliest: parseInt(timeRangeResult.rows[0].earliest),
-            latest: parseInt(timeRangeResult.rows[0].latest),
-          }
+          earliest: parseInt(timeRangeResult.rows[0].earliest),
+          latest: parseInt(timeRangeResult.rows[0].latest),
+        }
         : null;
 
     return {
@@ -823,6 +826,32 @@ export class PostgresAdapter implements StoragePort {
       CREATE INDEX IF NOT EXISTS idx_correlated_groups_timestamp ON correlated_anomaly_groups(timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_correlated_groups_pattern ON correlated_anomaly_groups(pattern, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_correlated_groups_severity ON correlated_anomaly_groups(severity, timestamp DESC);
+
+      CREATE TABLE IF NOT EXISTS key_pattern_snapshots (
+        id UUID PRIMARY KEY,
+        timestamp BIGINT NOT NULL,
+        pattern TEXT NOT NULL,
+        key_count INTEGER NOT NULL,
+        sampled_key_count INTEGER NOT NULL,
+        keys_with_ttl INTEGER NOT NULL,
+        keys_expiring_soon INTEGER NOT NULL,
+        total_memory_bytes BIGINT NOT NULL,
+        avg_memory_bytes INTEGER NOT NULL,
+        max_memory_bytes INTEGER NOT NULL,
+        avg_access_frequency DOUBLE PRECISION,
+        hot_key_count INTEGER,
+        cold_key_count INTEGER,
+        avg_idle_time_seconds DOUBLE PRECISION,
+        stale_key_count INTEGER,
+        avg_ttl_seconds INTEGER,
+        min_ttl_seconds INTEGER,
+        max_ttl_seconds INTEGER,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_kps_timestamp ON key_pattern_snapshots(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_kps_pattern ON key_pattern_snapshots(pattern, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_kps_pattern_timestamp ON key_pattern_snapshots(pattern, timestamp);
     `);
   }
 
@@ -1158,6 +1187,228 @@ export class PostgresAdapter implements StoragePort {
 
     const result = await this.pool.query(
       'DELETE FROM correlated_anomaly_groups WHERE timestamp < $1',
+      [cutoffTimestamp]
+    );
+
+    return result.rowCount ?? 0;
+  }
+
+  async saveKeyPatternSnapshots(snapshots: KeyPatternSnapshot[]): Promise<number> {
+    if (!this.pool || snapshots.length === 0) return 0;
+
+    const values: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    for (const snapshot of snapshots) {
+      values.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
+      params.push(
+        snapshot.id,
+        snapshot.timestamp,
+        snapshot.pattern,
+        snapshot.keyCount,
+        snapshot.sampledKeyCount,
+        snapshot.keysWithTtl,
+        snapshot.keysExpiringSoon,
+        snapshot.totalMemoryBytes,
+        snapshot.avgMemoryBytes,
+        snapshot.maxMemoryBytes,
+        snapshot.avgAccessFrequency ?? null,
+        snapshot.hotKeyCount ?? null,
+        snapshot.coldKeyCount ?? null,
+        snapshot.avgIdleTimeSeconds ?? null,
+        snapshot.staleKeyCount ?? null,
+        snapshot.avgTtlSeconds ?? null,
+        snapshot.minTtlSeconds ?? null,
+        snapshot.maxTtlSeconds ?? null,
+      );
+    }
+
+    await this.pool.query(`
+      INSERT INTO key_pattern_snapshots (
+        id, timestamp, pattern, key_count, sampled_key_count,
+        keys_with_ttl, keys_expiring_soon, total_memory_bytes,
+        avg_memory_bytes, max_memory_bytes, avg_access_frequency,
+        hot_key_count, cold_key_count, avg_idle_time_seconds,
+        stale_key_count, avg_ttl_seconds, min_ttl_seconds, max_ttl_seconds
+      ) VALUES ${values.join(', ')}
+    `, params);
+
+    return snapshots.length;
+  }
+
+  async getKeyPatternSnapshots(options: KeyPatternQueryOptions = {}): Promise<KeyPatternSnapshot[]> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (options.startTime) {
+      conditions.push(`timestamp >= $${paramIndex++}`);
+      params.push(options.startTime);
+    }
+    if (options.endTime) {
+      conditions.push(`timestamp <= $${paramIndex++}`);
+      params.push(options.endTime);
+    }
+    if (options.pattern) {
+      conditions.push(`pattern = $${paramIndex++}`);
+      params.push(options.pattern);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 100;
+    const offset = options.offset ?? 0;
+
+    const result = await this.pool.query(`
+      SELECT * FROM key_pattern_snapshots
+      ${whereClause}
+      ORDER BY timestamp DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+    `, [...params, limit, offset]);
+
+    return result.rows.map(row => ({
+      id: row.id,
+      timestamp: parseInt(row.timestamp),
+      pattern: row.pattern,
+      keyCount: row.key_count,
+      sampledKeyCount: row.sampled_key_count,
+      keysWithTtl: row.keys_with_ttl,
+      keysExpiringSoon: row.keys_expiring_soon,
+      totalMemoryBytes: parseInt(row.total_memory_bytes),
+      avgMemoryBytes: row.avg_memory_bytes,
+      maxMemoryBytes: row.max_memory_bytes,
+      avgAccessFrequency: row.avg_access_frequency,
+      hotKeyCount: row.hot_key_count,
+      coldKeyCount: row.cold_key_count,
+      avgIdleTimeSeconds: row.avg_idle_time_seconds,
+      staleKeyCount: row.stale_key_count,
+      avgTtlSeconds: row.avg_ttl_seconds,
+      minTtlSeconds: row.min_ttl_seconds,
+      maxTtlSeconds: row.max_ttl_seconds,
+    }));
+  }
+
+  async getKeyAnalyticsSummary(startTime?: number, endTime?: number): Promise<KeyAnalyticsSummary | null> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: number[] = [];
+    let paramIndex = 1;
+
+    if (startTime) {
+      conditions.push(`timestamp >= $${paramIndex++}`);
+      params.push(startTime);
+    }
+    if (endTime) {
+      conditions.push(`timestamp <= $${paramIndex++}`);
+      params.push(endTime);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const latestSnapshotsResult = await this.pool.query(`
+      SELECT pattern, MAX(timestamp) as latest_timestamp
+      FROM key_pattern_snapshots
+      ${whereClause}
+      GROUP BY pattern
+    `, params);
+
+    if (latestSnapshotsResult.rows.length === 0) return null;
+
+    const patternConditions = latestSnapshotsResult.rows.map(() => '(pattern = ? AND timestamp = ?)').join(' OR ');
+    const patternParams: any[] = [];
+    for (const row of latestSnapshotsResult.rows) {
+      patternParams.push(row.pattern, row.latest_timestamp);
+    }
+
+    let pIdx = 1;
+    const patternPlaceholders = latestSnapshotsResult.rows.map(() => `(pattern = $${pIdx++} AND timestamp = $${pIdx++})`).join(' OR ');
+
+    const summaryResult = await this.pool.query(`
+      SELECT
+        COUNT(DISTINCT pattern) as total_patterns,
+        SUM(key_count) as total_keys,
+        SUM(total_memory_bytes) as total_memory_bytes,
+        SUM(stale_key_count) as stale_key_count,
+        SUM(hot_key_count) as hot_key_count,
+        SUM(cold_key_count) as cold_key_count,
+        SUM(keys_expiring_soon) as keys_expiring_soon
+      FROM key_pattern_snapshots
+      WHERE ${patternPlaceholders}
+    `, patternParams);
+
+    const summary = summaryResult.rows[0];
+
+    const patternRowsResult = await this.pool.query(`
+      SELECT pattern, key_count, total_memory_bytes, avg_memory_bytes, stale_key_count, hot_key_count, cold_key_count
+      FROM key_pattern_snapshots
+      WHERE ${patternPlaceholders}
+    `, patternParams);
+
+    const byPattern: Record<string, any> = {};
+    for (const row of patternRowsResult.rows) {
+      byPattern[row.pattern] = {
+        keyCount: row.key_count,
+        memoryBytes: parseInt(row.total_memory_bytes),
+        avgMemoryBytes: row.avg_memory_bytes,
+        staleCount: row.stale_key_count ?? 0,
+        hotCount: row.hot_key_count ?? 0,
+        coldCount: row.cold_key_count ?? 0,
+      };
+    }
+
+    const timeRangeResult = await this.pool.query(`
+      SELECT MIN(timestamp) as earliest, MAX(timestamp) as latest
+      FROM key_pattern_snapshots ${whereClause}
+    `, params);
+
+    const timeRange = timeRangeResult.rows[0].earliest !== null && timeRangeResult.rows[0].latest !== null
+      ? { earliest: parseInt(timeRangeResult.rows[0].earliest), latest: parseInt(timeRangeResult.rows[0].latest) }
+      : null;
+
+    return {
+      totalPatterns: parseInt(summary.total_patterns) || 0,
+      totalKeys: parseInt(summary.total_keys) || 0,
+      totalMemoryBytes: parseInt(summary.total_memory_bytes) || 0,
+      staleKeyCount: parseInt(summary.stale_key_count) || 0,
+      hotKeyCount: parseInt(summary.hot_key_count) || 0,
+      coldKeyCount: parseInt(summary.cold_key_count) || 0,
+      keysExpiringSoon: parseInt(summary.keys_expiring_soon) || 0,
+      byPattern,
+      timeRange,
+    };
+  }
+
+  async getKeyPatternTrends(pattern: string, startTime: number, endTime: number): Promise<Array<{
+    timestamp: number;
+    keyCount: number;
+    memoryBytes: number;
+    staleCount: number;
+  }>> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const result = await this.pool.query(`
+      SELECT timestamp, key_count, total_memory_bytes, stale_key_count
+      FROM key_pattern_snapshots
+      WHERE pattern = $1 AND timestamp >= $2 AND timestamp <= $3
+      ORDER BY timestamp ASC
+    `, [pattern, startTime, endTime]);
+
+    return result.rows.map(row => ({
+      timestamp: parseInt(row.timestamp),
+      keyCount: row.key_count,
+      memoryBytes: parseInt(row.total_memory_bytes),
+      staleCount: row.stale_key_count ?? 0,
+    }));
+  }
+
+  async pruneOldKeyPatternSnapshots(cutoffTimestamp: number): Promise<number> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const result = await this.pool.query(
+      'DELETE FROM key_pattern_snapshots WHERE timestamp < $1',
       [cutoffTimestamp]
     );
 

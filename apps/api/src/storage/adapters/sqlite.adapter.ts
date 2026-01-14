@@ -16,6 +16,9 @@ import {
   StoredCorrelatedGroup,
   AnomalyQueryOptions,
   AnomalyStats,
+  KeyPatternSnapshot,
+  KeyPatternQueryOptions,
+  KeyAnalyticsSummary,
 } from '../../common/interfaces/storage-port.interface';
 
 export interface SqliteAdapterConfig {
@@ -26,7 +29,7 @@ export class SqliteAdapter implements StoragePort {
   private db: Database.Database | null = null;
   private ready: boolean = false;
 
-  constructor(private config: SqliteAdapterConfig) {}
+  constructor(private config: SqliteAdapterConfig) { }
 
   async initialize(): Promise<void> {
     try {
@@ -856,6 +859,32 @@ export class SqliteAdapter implements StoragePort {
       CREATE INDEX IF NOT EXISTS idx_correlated_groups_timestamp ON correlated_anomaly_groups(timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_correlated_groups_pattern ON correlated_anomaly_groups(pattern, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_correlated_groups_severity ON correlated_anomaly_groups(severity, timestamp DESC);
+
+      CREATE TABLE IF NOT EXISTS key_pattern_snapshots (
+        id TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        pattern TEXT NOT NULL,
+        key_count INTEGER NOT NULL,
+        sampled_key_count INTEGER NOT NULL,
+        keys_with_ttl INTEGER NOT NULL,
+        keys_expiring_soon INTEGER NOT NULL,
+        total_memory_bytes INTEGER NOT NULL,
+        avg_memory_bytes INTEGER NOT NULL,
+        max_memory_bytes INTEGER NOT NULL,
+        avg_access_frequency REAL,
+        hot_key_count INTEGER,
+        cold_key_count INTEGER,
+        avg_idle_time_seconds REAL,
+        stale_key_count INTEGER,
+        avg_ttl_seconds INTEGER,
+        min_ttl_seconds INTEGER,
+        max_ttl_seconds INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_kps_timestamp ON key_pattern_snapshots(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_kps_pattern ON key_pattern_snapshots(pattern, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_kps_pattern_timestamp ON key_pattern_snapshots(pattern, timestamp);
     `);
   }
 
@@ -1166,6 +1195,249 @@ export class SqliteAdapter implements StoragePort {
     if (!this.db) throw new Error('Database not initialized');
 
     const result = this.db.prepare('DELETE FROM correlated_anomaly_groups WHERE timestamp < ?').run(cutoffTimestamp);
+    return result.changes;
+  }
+
+  async saveKeyPatternSnapshots(snapshots: KeyPatternSnapshot[]): Promise<number> {
+    if (!this.db || snapshots.length === 0) return 0;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO key_pattern_snapshots (
+        id, timestamp, pattern, key_count, sampled_key_count,
+        keys_with_ttl, keys_expiring_soon, total_memory_bytes,
+        avg_memory_bytes, max_memory_bytes, avg_access_frequency,
+        hot_key_count, cold_key_count, avg_idle_time_seconds,
+        stale_key_count, avg_ttl_seconds, min_ttl_seconds, max_ttl_seconds
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertMany = this.db.transaction((snapshots: KeyPatternSnapshot[]) => {
+      for (const snapshot of snapshots) {
+        stmt.run(
+          snapshot.id,
+          snapshot.timestamp,
+          snapshot.pattern,
+          snapshot.keyCount,
+          snapshot.sampledKeyCount,
+          snapshot.keysWithTtl,
+          snapshot.keysExpiringSoon,
+          snapshot.totalMemoryBytes,
+          snapshot.avgMemoryBytes,
+          snapshot.maxMemoryBytes,
+          snapshot.avgAccessFrequency ?? null,
+          snapshot.hotKeyCount ?? null,
+          snapshot.coldKeyCount ?? null,
+          snapshot.avgIdleTimeSeconds ?? null,
+          snapshot.staleKeyCount ?? null,
+          snapshot.avgTtlSeconds ?? null,
+          snapshot.minTtlSeconds ?? null,
+          snapshot.maxTtlSeconds ?? null,
+        );
+      }
+    });
+
+    insertMany(snapshots);
+    return snapshots.length;
+  }
+
+  async getKeyPatternSnapshots(options: KeyPatternQueryOptions = {}): Promise<KeyPatternSnapshot[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (options.startTime) {
+      conditions.push('timestamp >= ?');
+      params.push(options.startTime);
+    }
+    if (options.endTime) {
+      conditions.push('timestamp <= ?');
+      params.push(options.endTime);
+    }
+    if (options.pattern) {
+      conditions.push('pattern = ?');
+      params.push(options.pattern);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 100;
+    const offset = options.offset ?? 0;
+
+    const query = `
+      SELECT * FROM key_pattern_snapshots
+      ${whereClause}
+      ORDER BY timestamp DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    params.push(limit, offset);
+
+    const rows = this.db.prepare(query).all(...params) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      timestamp: row.timestamp,
+      pattern: row.pattern,
+      keyCount: row.key_count,
+      sampledKeyCount: row.sampled_key_count,
+      keysWithTtl: row.keys_with_ttl,
+      keysExpiringSoon: row.keys_expiring_soon,
+      totalMemoryBytes: row.total_memory_bytes,
+      avgMemoryBytes: row.avg_memory_bytes,
+      maxMemoryBytes: row.max_memory_bytes,
+      avgAccessFrequency: row.avg_access_frequency,
+      hotKeyCount: row.hot_key_count,
+      coldKeyCount: row.cold_key_count,
+      avgIdleTimeSeconds: row.avg_idle_time_seconds,
+      staleKeyCount: row.stale_key_count,
+      avgTtlSeconds: row.avg_ttl_seconds,
+      minTtlSeconds: row.min_ttl_seconds,
+      maxTtlSeconds: row.max_ttl_seconds,
+    }));
+  }
+
+  async getKeyAnalyticsSummary(startTime?: number, endTime?: number): Promise<KeyAnalyticsSummary | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: number[] = [];
+
+    if (startTime) {
+      conditions.push('timestamp >= ?');
+      params.push(startTime);
+    }
+    if (endTime) {
+      conditions.push('timestamp <= ?');
+      params.push(endTime);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Get the latest snapshot for each pattern within the time range
+    const latestSnapshotsQuery = `
+      SELECT
+        pattern,
+        MAX(timestamp) as latest_timestamp
+      FROM key_pattern_snapshots
+      ${whereClause}
+      GROUP BY pattern
+    `;
+
+    const latestSnapshots = this.db.prepare(latestSnapshotsQuery).all(...params) as Array<{
+      pattern: string;
+      latest_timestamp: number;
+    }>;
+
+    if (latestSnapshots.length === 0) {
+      return null;
+    }
+
+    // Build aggregation query for latest snapshots only
+    const patternConditions = latestSnapshots.map(() => '(pattern = ? AND timestamp = ?)').join(' OR ');
+    const patternParams: any[] = [];
+    for (const snapshot of latestSnapshots) {
+      patternParams.push(snapshot.pattern, snapshot.latest_timestamp);
+    }
+
+    const summaryQuery = `
+      SELECT
+        COUNT(DISTINCT pattern) as total_patterns,
+        SUM(key_count) as total_keys,
+        SUM(total_memory_bytes) as total_memory_bytes,
+        SUM(stale_key_count) as stale_key_count,
+        SUM(hot_key_count) as hot_key_count,
+        SUM(cold_key_count) as cold_key_count,
+        SUM(keys_expiring_soon) as keys_expiring_soon
+      FROM key_pattern_snapshots
+      WHERE ${patternConditions}
+    `;
+
+    const summary = this.db.prepare(summaryQuery).get(...patternParams) as any;
+
+    // Get per-pattern breakdown
+    const byPatternQuery = `
+      SELECT
+        pattern,
+        key_count,
+        total_memory_bytes,
+        avg_memory_bytes,
+        stale_key_count,
+        hot_key_count,
+        cold_key_count
+      FROM key_pattern_snapshots
+      WHERE ${patternConditions}
+    `;
+
+    const patternRows = this.db.prepare(byPatternQuery).all(...patternParams) as any[];
+
+    const byPattern: Record<string, any> = {};
+    for (const row of patternRows) {
+      byPattern[row.pattern] = {
+        keyCount: row.key_count,
+        memoryBytes: row.total_memory_bytes,
+        avgMemoryBytes: row.avg_memory_bytes,
+        staleCount: row.stale_key_count ?? 0,
+        hotCount: row.hot_key_count ?? 0,
+        coldCount: row.cold_key_count ?? 0,
+      };
+    }
+
+    // Get time range
+    const timeRangeResult = this.db
+      .prepare(`SELECT MIN(timestamp) as earliest, MAX(timestamp) as latest FROM key_pattern_snapshots ${whereClause}`)
+      .get(...params) as { earliest: number | null; latest: number | null };
+
+    const timeRange =
+      timeRangeResult.earliest !== null && timeRangeResult.latest !== null
+        ? { earliest: timeRangeResult.earliest, latest: timeRangeResult.latest }
+        : null;
+
+    return {
+      totalPatterns: summary.total_patterns ?? 0,
+      totalKeys: summary.total_keys ?? 0,
+      totalMemoryBytes: summary.total_memory_bytes ?? 0,
+      staleKeyCount: summary.stale_key_count ?? 0,
+      hotKeyCount: summary.hot_key_count ?? 0,
+      coldKeyCount: summary.cold_key_count ?? 0,
+      keysExpiringSoon: summary.keys_expiring_soon ?? 0,
+      byPattern,
+      timeRange,
+    };
+  }
+
+  async getKeyPatternTrends(pattern: string, startTime: number, endTime: number): Promise<Array<{
+    timestamp: number;
+    keyCount: number;
+    memoryBytes: number;
+    staleCount: number;
+  }>> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = `
+      SELECT
+        timestamp,
+        key_count,
+        total_memory_bytes,
+        stale_key_count
+      FROM key_pattern_snapshots
+      WHERE pattern = ? AND timestamp >= ? AND timestamp <= ?
+      ORDER BY timestamp ASC
+    `;
+
+    const rows = this.db.prepare(query).all(pattern, startTime, endTime) as any[];
+
+    return rows.map(row => ({
+      timestamp: row.timestamp,
+      keyCount: row.key_count,
+      memoryBytes: row.total_memory_bytes,
+      staleCount: row.stale_key_count ?? 0,
+    }));
+  }
+
+  async pruneOldKeyPatternSnapshots(cutoffTimestamp: number): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = this.db.prepare('DELETE FROM key_pattern_snapshots WHERE timestamp < ?').run(cutoffTimestamp);
     return result.changes;
   }
 }

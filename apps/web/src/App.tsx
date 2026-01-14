@@ -11,6 +11,7 @@ import { ClientAnalytics } from './pages/ClientAnalytics';
 import { ClientAnalyticsDeepDive } from './pages/ClientAnalyticsDeepDive';
 import { AiAssistant } from './pages/AiAssistant';
 import { AnomalyDashboard } from './pages/AnomalyDashboard';
+import { KeyAnalytics } from './pages/KeyAnalytics';
 import type { DatabaseCapabilities } from './types/metrics';
 
 function App() {
@@ -66,6 +67,9 @@ function AppLayout() {
           <NavItem to="/anomalies" active={location.pathname === '/anomalies'}>
             Anomaly Detection
           </NavItem>
+          <NavItem to="/key-analytics" active={location.pathname === '/key-analytics'}>
+            Key Analytics
+          </NavItem>
           <NavItem to="/audit" active={location.pathname === '/audit'}>
             Audit Trail
           </NavItem>
@@ -90,6 +94,7 @@ function AppLayout() {
             <Route path="/client-analytics" element={<ClientAnalytics />} />
             <Route path="/client-analytics/deep-dive" element={<ClientAnalyticsDeepDive />} />
             <Route path="/anomalies" element={<AnomalyDashboard />} />
+            <Route path="/key-analytics" element={<KeyAnalytics />} />
             <Route path="/audit" element={<AuditTrail />} />
             <Route path="/helper" element={<AiAssistant />} />
           </Routes>
@@ -109,11 +114,10 @@ function NavItem({ children, active, to }: NavItemProps) {
   return (
     <Link
       to={to}
-      className={`block w-full rounded-md px-3 py-2 text-sm transition-colors ${
-        active
-          ? 'bg-primary text-primary-foreground'
-          : 'hover:bg-muted'
-      }`}
+      className={`block w-full rounded-md px-3 py-2 text-sm transition-colors ${active
+        ? 'bg-primary text-primary-foreground'
+        : 'hover:bg-muted'
+        }`}
     >
       {children}
     </Link>
