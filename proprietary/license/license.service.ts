@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Tier, Feature, TIER_FEATURES, TIER_INSTANCE_LIMITS, EntitlementResponse } from './types';
+import { Tier, Feature, TIER_FEATURES, TIER_INSTANCE_LIMITS, TIER_RETENTION_LIMITS, EntitlementResponse } from './types';
 
 interface CachedEntitlement {
   response: EntitlementResponse;
@@ -15,7 +15,6 @@ export class LicenseService implements OnModuleInit {
   private readonly cacheTtlMs: number;
   private readonly maxStaleCacheMs: number;
   private readonly timeoutMs: number;
-  private readonly devMode: boolean;
 
   private cache: CachedEntitlement | null = null;
 
@@ -25,7 +24,6 @@ export class LicenseService implements OnModuleInit {
     this.cacheTtlMs = parseInt(process.env.LICENSE_CACHE_TTL_MS || '3600000', 10);
     this.maxStaleCacheMs = parseInt(process.env.LICENSE_MAX_STALE_MS || '604800000', 10);
     this.timeoutMs = parseInt(process.env.LICENSE_TIMEOUT_MS || '10000', 10);
-    this.devMode = process.env.NODE_ENV === 'development';
   }
 
   async onModuleInit() {
@@ -36,10 +34,6 @@ export class LicenseService implements OnModuleInit {
     if (!this.licenseKey) {
       this.logger.log('No license key provided, running in Community tier');
       return this.getCommunityEntitlement();
-    }
-
-    if (this.devMode && this.licenseKey.startsWith('dev-')) {
-      return this.getDevEntitlement(this.licenseKey);
     }
 
     if (this.cache && Date.now() - this.cache.cachedAt < this.cacheTtlMs) {
@@ -104,28 +98,18 @@ export class LicenseService implements OnModuleInit {
     return {
       valid: !error,
       tier: Tier.community,
-      features: TIER_FEATURES[Tier.community],
       instanceLimit: TIER_INSTANCE_LIMITS[Tier.community],
+      retentionLimits: TIER_RETENTION_LIMITS[Tier.community],
       expiresAt: null,
       error,
     };
   }
 
-  private getDevEntitlement(key: string): EntitlementResponse {
-    const tier = key.includes('enterprise') ? Tier.enterprise : Tier.pro;
-    this.logger.log(`Dev mode: ${tier} tier`);
-    return {
-      valid: true,
-      tier,
-      features: TIER_FEATURES[tier],
-      instanceLimit: TIER_INSTANCE_LIMITS[tier],
-      expiresAt: null,
-    };
-  }
-
   hasFeature(feature: Feature | string): boolean {
     const entitlement = this.cache?.response || this.getCommunityEntitlement();
-    return entitlement.features.includes(feature as Feature);
+    // Derive features from tier using TIER_FEATURES mapping
+    const tierFeatures = TIER_FEATURES[entitlement.tier];
+    return tierFeatures.includes(feature as Feature);
   }
 
   getLicenseTier(): Tier {

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, HttpCode } from '@nestjs/common';
 import { LicenseService } from './license.service';
-import { Feature } from './types';
+import { Feature, TIER_FEATURES } from './types';
 
 @Controller('license')
 export class LicenseController {
@@ -9,11 +9,14 @@ export class LicenseController {
   @Get('status')
   getStatus() {
     const info = this.license.getLicenseInfo();
+    // Derive features from tier using TIER_FEATURES mapping
+    const features = TIER_FEATURES[info.tier];
     return {
       tier: info.tier,
       valid: info.valid,
-      features: info.features,
+      features,
       instanceLimit: info.instanceLimit,
+      retentionLimits: info.retentionLimits,
       expiresAt: info.expiresAt,
       customer: info.customer,
     };
@@ -23,11 +26,13 @@ export class LicenseController {
   getFeatures() {
     const info = this.license.getLicenseInfo();
     const allFeatures = Object.values(Feature);
+    // Derive enabled features from tier
+    const tierFeatures = TIER_FEATURES[info.tier];
     return {
       tier: info.tier,
       features: allFeatures.map(f => ({
         id: f,
-        enabled: info.features.includes(f),
+        enabled: tierFeatures.includes(f),
       })),
     };
   }

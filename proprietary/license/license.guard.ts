@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { LicenseService } from './license.service';
 import { Feature } from './types';
 
-const ENTERPRISE_ONLY_FEATURES = [Feature.AI_ASSISTANT, Feature.SSO_SAML, Feature.RBAC];
+const ENTERPRISE_ONLY_FEATURES = [Feature.SSO_SAML, Feature.COMPLIANCE_EXPORT, Feature.RBAC, Feature.AI_CLOUD];
 
 @Injectable()
 export class LicenseGuard implements CanActivate {
