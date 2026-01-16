@@ -6,11 +6,11 @@ import { MetricsModule } from './metrics/metrics.module';
 import { AuditModule } from './audit/audit.module';
 import { ClientAnalyticsModule } from './client-analytics/client-analytics.module';
 import { PrometheusModule } from './prometheus/prometheus.module';
-import { AnomalyModule } from './anomaly/anomaly.module';
 
 let AiModule: any = null;
 let LicenseModule: any = null;
 let KeyAnalyticsModule: any = null;
+let AnomalyModule: any = null;
 
 try {
   const module = require('@proprietary/ai/ai.module');
@@ -36,6 +36,14 @@ try {
   // Proprietary module not available
 }
 
+try {
+  const anomalyModule = require('@proprietary/anomaly-detection/anomaly.module');
+  AnomalyModule = anomalyModule.AnomalyModule;
+  console.log('[AnomalyDetection] Proprietary module loaded');
+} catch {
+  // Proprietary module not available
+}
+
 const baseImports = [
   ConfigModule,
   DatabaseModule,
@@ -44,12 +52,12 @@ const baseImports = [
   AuditModule,
   ClientAnalyticsModule,
   PrometheusModule,
-  AnomalyModule,
 ];
 
 const proprietaryImports = [
   LicenseModule,
   KeyAnalyticsModule,
+  AnomalyModule,
   AiModule,
 ].filter(Boolean);
 

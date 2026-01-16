@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AnomalyService } from './anomaly.service';
 import { AnomalyController } from './anomaly.controller';
-import { DatabaseModule } from '../database/database.module';
-import { StorageModule } from '../storage/storage.module';
-import { PrometheusModule } from '../prometheus/prometheus.module';
+import { DatabaseModule } from '@app/database/database.module';
+import { StorageModule } from '@app/storage/storage.module';
+import { PrometheusModule } from '@app/prometheus/prometheus.module';
 
 @Module({
   imports: [DatabaseModule, StorageModule, PrometheusModule],

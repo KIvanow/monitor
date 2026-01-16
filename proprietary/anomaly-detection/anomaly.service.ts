@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DatabasePort } from '../common/interfaces/database-port.interface';
-import { StoragePort, StoredAnomalyEvent, StoredCorrelatedGroup } from '../common/interfaces/storage-port.interface';
-import { PrometheusService } from '../prometheus/prometheus.service';
+import { DatabasePort } from '@app/common/interfaces/database-port.interface';
+import { StoragePort, StoredAnomalyEvent, StoredCorrelatedGroup } from '@app/common/interfaces/storage-port.interface';
+import { PrometheusService } from '@app/prometheus/prometheus.service';
 import { MetricBuffer } from './metric-buffer';
 import { SpikeDetector } from './spike-detector';
 import { Correlator } from './correlator';
