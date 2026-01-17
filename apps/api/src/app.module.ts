@@ -6,6 +6,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { AuditModule } from './audit/audit.module';
 import { ClientAnalyticsModule } from './client-analytics/client-analytics.module';
 import { PrometheusModule } from './prometheus/prometheus.module';
+import { SettingsModule } from './settings/settings.module';
 
 let AiModule: any = null;
 let LicenseModule: any = null;
@@ -52,6 +53,7 @@ const baseImports = [
   AuditModule,
   ClientAnalyticsModule,
   PrometheusModule,
+  SettingsModule,
 ];
 
 const proprietaryImports = [

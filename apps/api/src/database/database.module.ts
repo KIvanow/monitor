@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { DatabaseClientFactory } from './factory/database-client.factory';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
+  imports: [StorageModule],
   providers: [
     DatabaseClientFactory,
     {

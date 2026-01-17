@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DatabasePort } from '@app/common/interfaces/database-port.interface';
 import { StoragePort, StoredAnomalyEvent, StoredCorrelatedGroup } from '@app/common/interfaces/storage-port.interface';
 import { PrometheusService } from '@app/prometheus/prometheus.service';
+import { SettingsService } from '@app/settings/settings.service';
 import { MetricBuffer } from './metric-buffer';
 import { SpikeDetector } from './spike-detector';
 import { Correlator } from './correlator';
@@ -39,10 +40,7 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
   private readonly maxRecentGroups = 100;
 
   private readonly metricExtractors: Map<MetricType, MetricExtractor>;
-  private readonly pollIntervalMs = 1000;
   private readonly correlationIntervalMs = 5000;
-  private readonly cacheTtlMs: number;
-  private readonly prometheusSummaryIntervalMs: number;
 
   constructor(
     @Inject('DATABASE_CLIENT')
@@ -51,12 +49,23 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
     private readonly storage: StoragePort,
     private readonly configService: ConfigService,
     private readonly prometheusService: PrometheusService,
+    private readonly settingsService: SettingsService,
   ) {
     this.correlator = new Correlator(this.correlationIntervalMs);
     this.metricExtractors = this.initializeMetricExtractors();
     this.initializeBuffersAndDetectors();
-    this.cacheTtlMs = this.configService.get<number>('anomaly.cacheTtlMs') ?? 3600000;
-    this.prometheusSummaryIntervalMs = this.configService.get<number>('anomaly.prometheusSummaryIntervalMs') ?? 30000;
+  }
+
+  private get pollIntervalMs(): number {
+    return this.settingsService.getCachedSettings().anomalyPollIntervalMs;
+  }
+
+  private get cacheTtlMs(): number {
+    return this.settingsService.getCachedSettings().anomalyCacheTtlMs;
+  }
+
+  private get prometheusSummaryIntervalMs(): number {
+    return this.settingsService.getCachedSettings().anomalyPrometheusIntervalMs;
   }
 
   onModuleInit() {
@@ -153,16 +162,21 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
   }
 
   private startPolling(): void {
-    this.pollInterval = setInterval(() => {
-      this.pollMetrics().catch(err => {
-        this.logger.error('Error polling metrics:', err);
-      });
-    }, this.pollIntervalMs);
-
-    // Run immediately
     this.pollMetrics().catch(err => {
       this.logger.error('Error in initial poll:', err);
     });
+
+    const scheduleNextPoll = () => {
+      this.pollInterval = setTimeout(async () => {
+        try {
+          await this.pollMetrics();
+        } catch (err) {
+          this.logger.error('Error polling metrics:', err);
+        }
+        scheduleNextPoll();
+      }, this.pollIntervalMs);
+    };
+    scheduleNextPoll();
   }
 
   private async pollMetrics(): Promise<void> {
@@ -555,15 +569,21 @@ export class AnomalyService implements OnModuleInit, OnModuleDestroy {
   }
 
   private startPrometheusSummaryUpdates(): void {
-    this.summaryInterval = setInterval(() => {
-      this.updatePrometheusSummary().catch(err =>
-        this.logger.error('Failed to update Prometheus summary:', err)
-      );
-    }, this.prometheusSummaryIntervalMs);
-
     this.updatePrometheusSummary().catch(err =>
       this.logger.error('Failed to update initial Prometheus summary:', err)
     );
+
+    const scheduleNextUpdate = () => {
+      this.summaryInterval = setTimeout(async () => {
+        try {
+          await this.updatePrometheusSummary();
+        } catch (err) {
+          this.logger.error('Failed to update Prometheus summary:', err);
+        }
+        scheduleNextUpdate();
+      }, this.prometheusSummaryIntervalMs);
+    };
+    scheduleNextUpdate();
   }
 
   private async updatePrometheusSummary(): Promise<void> {

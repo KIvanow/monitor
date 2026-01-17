@@ -16,6 +16,7 @@ import { ClientAnalyticsDeepDive } from './pages/ClientAnalyticsDeepDive';
 import { AiAssistant } from './pages/AiAssistant';
 import { AnomalyDashboard } from './pages/AnomalyDashboard';
 import { KeyAnalytics } from './pages/KeyAnalytics';
+import { Settings } from './pages/Settings';
 import type { DatabaseCapabilities } from './types/metrics';
 import { Feature } from '@betterdb/shared';
 
@@ -59,11 +60,11 @@ function AppLayout() {
 
   return (
     <div className="min-h-screen bg-background">
-      <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-card">
+      <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-card flex flex-col">
         <div className="p-6">
           <h2 className="text-lg font-semibold">BetterDB Monitor</h2>
         </div>
-        <nav className="space-y-1 px-3">
+        <nav className="space-y-1 px-3 flex-1">
           <NavItem to="/" active={location.pathname === '/'}>
             Dashboard
           </NavItem>
@@ -108,6 +109,11 @@ function AppLayout() {
             </span>
           </NavItem>
         </nav>
+        <div className="px-3 pb-4 border-t border-gray-200 pt-2">
+          <NavItem to="/settings" active={location.pathname === '/settings'}>
+            Settings
+          </NavItem>
+        </div>
       </aside>
 
       <main className="pl-64 min-h-screen flex flex-col">
@@ -123,6 +129,7 @@ function AppLayout() {
             <Route path="/key-analytics" element={<KeyAnalytics />} />
             <Route path="/audit" element={<AuditTrail />} />
             <Route path="/helper" element={<AiAssistant />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </div>
       </main>

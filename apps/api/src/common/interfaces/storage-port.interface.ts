@@ -14,6 +14,8 @@ export type {
   ActivityTimelineResponse,
   SpikeDetectionParams,
   SpikeDetectionResponse,
+  AppSettings,
+  SettingsUpdateRequest,
 } from '@betterdb/shared';
 import type { StoredAclEntry, AuditQueryOptions, AuditStats } from '@betterdb/shared';
 import type {
@@ -31,6 +33,8 @@ import type {
   ActivityTimelineResponse,
   SpikeDetectionParams,
   SpikeDetectionResponse,
+  AppSettings,
+  SettingsUpdateRequest,
 } from '@betterdb/shared';
 
 // Anomaly Event Types
@@ -133,4 +137,9 @@ export interface StoragePort {
     staleCount: number;
   }>>;
   pruneOldKeyPatternSnapshots(cutoffTimestamp: number): Promise<number>;
+
+  // Settings Methods
+  getSettings(): Promise<AppSettings | null>;
+  saveSettings(settings: AppSettings): Promise<AppSettings>;
+  updateSettings(updates: SettingsUpdateRequest): Promise<AppSettings>;
 }

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { metricsApi } from '../api/metrics';
+import { settingsApi } from '../api/settings';
 import { usePolling } from '../hooks/usePolling';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -51,21 +52,29 @@ export function ClientAnalytics() {
 
   const { start, end, bucket } = getTimeRangeMs(timeRange);
 
+  // Fetch settings to get the polling interval
+  const { data: settingsResponse } = usePolling({
+    fetcher: () => settingsApi.getSettings(),
+    interval: 30000, // Refresh settings every 30 seconds
+  });
+
+  const pollInterval = settingsResponse?.settings.clientAnalyticsPollIntervalMs || 10000;
+
   const { data: stats, loading: statsLoading } = usePolling({
     fetcher: () => metricsApi.getClientAnalyticsStats(start, end),
-    interval: 10000, // 10 seconds
+    interval: pollInterval,
   });
 
   const { data: timeSeries } = usePolling({
     fetcher: () => metricsApi.getClientTimeSeries(start, end, bucket),
-    interval: 10000,
+    interval: pollInterval,
   });
 
   const { data: connectionHistory, loading: historyLoading } = usePolling({
     fetcher: selectedClient
       ? () => metricsApi.getClientConnectionHistory(selectedClient, start, end)
       : () => Promise.resolve([]),
-    interval: 10000,
+    interval: pollInterval,
     enabled: !!selectedClient,
   });
 

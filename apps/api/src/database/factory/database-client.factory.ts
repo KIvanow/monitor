@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { DatabasePort } from '../../common/interfaces/database-port.interface';
 import { ValkeyAdapter } from '../adapters/valkey.adapter';
 import { RedisAdapter } from '../adapters/redis.adapter';
-import { InfoParser } from '../parsers/info.parser';
 import { DatabaseConfig } from '../../config/configuration';
 
 @Injectable()
@@ -12,7 +11,6 @@ export class DatabaseClientFactory {
 
   async create(): Promise<DatabasePort> {
     const dbConfig = this.configService.get<DatabaseConfig>('database');
-
     if (!dbConfig) {
       throw new Error('Database configuration not found');
     }

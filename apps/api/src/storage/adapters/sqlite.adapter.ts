@@ -19,6 +19,8 @@ import {
   KeyPatternSnapshot,
   KeyPatternQueryOptions,
   KeyAnalyticsSummary,
+  AppSettings,
+  SettingsUpdateRequest,
 } from '../../common/interfaces/storage-port.interface';
 
 export interface SqliteAdapterConfig {
@@ -885,6 +887,17 @@ export class SqliteAdapter implements StoragePort {
       CREATE INDEX IF NOT EXISTS idx_kps_timestamp ON key_pattern_snapshots(timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_kps_pattern ON key_pattern_snapshots(pattern, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_kps_pattern_timestamp ON key_pattern_snapshots(pattern, timestamp);
+
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        audit_poll_interval_ms INTEGER NOT NULL DEFAULT 60000,
+        client_analytics_poll_interval_ms INTEGER NOT NULL DEFAULT 60000,
+        anomaly_poll_interval_ms INTEGER NOT NULL DEFAULT 1000,
+        anomaly_cache_ttl_ms INTEGER NOT NULL DEFAULT 3600000,
+        anomaly_prometheus_interval_ms INTEGER NOT NULL DEFAULT 30000,
+        updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+      );
     `);
   }
 
@@ -1439,5 +1452,79 @@ export class SqliteAdapter implements StoragePort {
 
     const result = this.db.prepare('DELETE FROM key_pattern_snapshots WHERE timestamp < ?').run(cutoffTimestamp);
     return result.changes;
+  }
+
+  async getSettings(): Promise<AppSettings | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const row = this.db.prepare('SELECT * FROM app_settings WHERE id = 1').get() as any;
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      auditPollIntervalMs: row.audit_poll_interval_ms,
+      clientAnalyticsPollIntervalMs: row.client_analytics_poll_interval_ms,
+      anomalyPollIntervalMs: row.anomaly_poll_interval_ms,
+      anomalyCacheTtlMs: row.anomaly_cache_ttl_ms,
+      anomalyPrometheusIntervalMs: row.anomaly_prometheus_interval_ms,
+      updatedAt: row.updated_at,
+      createdAt: row.created_at,
+    };
+  }
+
+  async saveSettings(settings: AppSettings): Promise<AppSettings> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT INTO app_settings (
+        id, audit_poll_interval_ms, client_analytics_poll_interval_ms,
+        anomaly_poll_interval_ms, anomaly_cache_ttl_ms, anomaly_prometheus_interval_ms,
+        updated_at, created_at
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        audit_poll_interval_ms = excluded.audit_poll_interval_ms,
+        client_analytics_poll_interval_ms = excluded.client_analytics_poll_interval_ms,
+        anomaly_poll_interval_ms = excluded.anomaly_poll_interval_ms,
+        anomaly_cache_ttl_ms = excluded.anomaly_cache_ttl_ms,
+        anomaly_prometheus_interval_ms = excluded.anomaly_prometheus_interval_ms,
+        updated_at = excluded.updated_at
+    `);
+
+    stmt.run(
+      settings.auditPollIntervalMs,
+      settings.clientAnalyticsPollIntervalMs,
+      settings.anomalyPollIntervalMs,
+      settings.anomalyCacheTtlMs,
+      settings.anomalyPrometheusIntervalMs,
+      now,
+      settings.createdAt || now
+    );
+
+    const saved = await this.getSettings();
+    if (!saved) {
+      throw new Error('Failed to save settings');
+    }
+    return saved;
+  }
+
+  async updateSettings(updates: SettingsUpdateRequest): Promise<AppSettings> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const current = await this.getSettings();
+    if (!current) {
+      throw new Error('Settings not found. Initialize settings first.');
+    }
+
+    const merged: AppSettings = {
+      ...current,
+      ...updates,
+      updatedAt: Date.now(),
+    };
+
+    return this.saveSettings(merged);
   }
 }

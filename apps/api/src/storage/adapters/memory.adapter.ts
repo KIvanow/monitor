@@ -14,6 +14,8 @@ import {
   KeyPatternSnapshot,
   KeyPatternQueryOptions,
   KeyAnalyticsSummary,
+  AppSettings,
+  SettingsUpdateRequest,
 } from '../../common/interfaces/storage-port.interface';
 
 export class MemoryAdapter implements StoragePort {
@@ -21,6 +23,7 @@ export class MemoryAdapter implements StoragePort {
   private clientSnapshots: StoredClientSnapshot[] = [];
   private anomalyEvents: StoredAnomalyEvent[] = [];
   private correlatedGroups: StoredCorrelatedGroup[] = [];
+  private settings: AppSettings | null = null;
   private idCounter = 1;
   private ready: boolean = false;
 
@@ -530,5 +533,33 @@ export class MemoryAdapter implements StoragePort {
 
   async pruneOldKeyPatternSnapshots(_cutoffTimestamp: number): Promise<number> {
     throw new Error('Key analytics not supported in memory adapter');
+  }
+
+  async getSettings(): Promise<AppSettings | null> {
+    return this.settings ? { ...this.settings } : null;
+  }
+
+  async saveSettings(settings: AppSettings): Promise<AppSettings> {
+    const now = Date.now();
+    this.settings = {
+      ...settings,
+      id: 1,
+      updatedAt: now,
+      createdAt: this.settings?.createdAt ?? now,
+    };
+    return { ...this.settings };
+  }
+
+  async updateSettings(updates: SettingsUpdateRequest): Promise<AppSettings> {
+    if (!this.settings) {
+      throw new Error('Settings not found. Initialize settings first.');
+    }
+
+    this.settings = {
+      ...this.settings,
+      ...updates,
+      updatedAt: Date.now(),
+    };
+    return { ...this.settings };
   }
 }

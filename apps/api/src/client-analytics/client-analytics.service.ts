@@ -10,6 +10,7 @@ import {
 } from '../common/interfaces/storage-port.interface';
 import { PrometheusService } from '../prometheus/prometheus.service';
 import { RetentionService } from '@proprietary/license';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
@@ -17,6 +18,7 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
   private pollInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private isPolling = false;
+  private readonly enabled: boolean;
 
   constructor(
     @Inject('DATABASE_CLIENT') private dbClient: DatabasePort,
@@ -24,13 +26,19 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
     private configService: ConfigService,
     private prometheusService: PrometheusService,
     private retention: RetentionService,
-  ) {}
+    private settingsService: SettingsService,
+  ) {
+    this.enabled = this.configService.get<boolean>('storage.clientAnalytics.enabled', true);
+  }
+
+  private get pollIntervalMs(): number {
+    return this.settingsService.getCachedSettings().clientAnalyticsPollIntervalMs;
+  }
 
   async onModuleInit(): Promise<void> {
-    const config = this.configService.get('storage.clientAnalytics');
-    if (config?.enabled) {
-      this.logger.log(`Starting client analytics polling (interval: ${config.pollIntervalMs}ms, retention: ${config.retentionDays} days)`);
-      await this.startPolling(config.pollIntervalMs);
+    if (this.enabled) {
+      this.logger.log(`Starting client analytics polling (interval: ${this.pollIntervalMs}ms)`);
+      await this.startPolling();
 
       await this.cleanup();
       this.cleanupInterval = setInterval(
@@ -48,21 +56,27 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async startPolling(intervalMs: number): Promise<void> {
+  private async startPolling(): Promise<void> {
     await this.captureSnapshot();
 
-    this.pollInterval = setInterval(() => {
-      if (!this.isPolling) {
-        this.captureSnapshot().catch((err) =>
-          this.logger.error('Client snapshot capture failed:', err),
-        );
-      }
-    }, intervalMs);
+    const scheduleNextPoll = () => {
+      this.pollInterval = setTimeout(async () => {
+        if (!this.isPolling) {
+          try {
+            await this.captureSnapshot();
+          } catch (err) {
+            this.logger.error('Client snapshot capture failed:', err);
+          }
+        }
+        scheduleNextPoll();
+      }, this.pollIntervalMs);
+    };
+    scheduleNextPoll();
   }
 
   private stopPolling(): void {
     if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+      clearTimeout(this.pollInterval);
       this.pollInterval = null;
     }
   }
@@ -140,8 +154,7 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async cleanup(): Promise<number> {
-    const config = this.configService.get('storage.clientAnalytics');
-    const cutoff = Date.now() - config.retentionDays * 24 * 60 * 60 * 1000;
+    const cutoff = this.retention.getDataRetentionCutoff().getTime();
     const pruned = await this.storage.pruneOldClientSnapshots(cutoff);
     this.logger.log(`Pruned ${pruned} old client snapshots`);
     return pruned;

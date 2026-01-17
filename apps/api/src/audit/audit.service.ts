@@ -4,6 +4,8 @@ import { DatabasePort } from '../common/interfaces/database-port.interface';
 import { StoragePort, StoredAclEntry } from '../common/interfaces/storage-port.interface';
 import { AclLogEntry } from '../common/types/metrics.types';
 import { PrometheusService } from '../prometheus/prometheus.service';
+import { SettingsService } from '../settings/settings.service';
+import { RetentionService } from '@proprietary/license';
 
 @Injectable()
 export class AuditService implements OnModuleInit, OnModuleDestroy {
@@ -12,8 +14,6 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   private cleanupInterval: NodeJS.Timeout | null = null;
   private lastSeenTimestamp: number = 0;
   private readonly enabled: boolean;
-  private readonly pollIntervalMs: number;
-  private readonly retentionDays: number;
   private readonly sourceHost: string;
   private readonly sourcePort: number;
 
@@ -24,12 +24,16 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     private readonly storageClient: StoragePort,
     private readonly configService: ConfigService,
     private readonly prometheusService: PrometheusService,
+    private readonly settingsService: SettingsService,
+    private readonly retentionService: RetentionService,
   ) {
     this.enabled = this.configService.get<boolean>('storage.audit.enabled', true);
-    this.pollIntervalMs = this.configService.get<number>('storage.audit.pollIntervalMs', 60000);
-    this.retentionDays = this.configService.get<number>('storage.audit.retentionDays', 30);
     this.sourceHost = this.configService.get<string>('database.host', 'localhost');
     this.sourcePort = this.configService.get<number>('database.port', 6379);
+  }
+
+  private get pollIntervalMs(): number {
+    return this.settingsService.getCachedSettings().auditPollIntervalMs;
   }
 
   async onModuleInit(): Promise<void> {
@@ -43,19 +47,10 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.logger.log(
-      `Starting audit trail polling (interval: ${this.pollIntervalMs}ms, retention: ${this.retentionDays} days)`,
-    );
+    this.logger.log(`Starting audit trail polling (interval: ${this.pollIntervalMs}ms)`);
 
-    // Initial poll
     await this.pollAclLog();
-
-    // Set up recurring poll
-    this.pollInterval = setInterval(() => {
-      this.pollAclLog().catch((error) => {
-        this.logger.error(`Failed to poll ACL log: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      });
-    }, this.pollIntervalMs);
+    this.startPolling();
 
     this.cleanupInterval = setInterval(
       () => {
@@ -68,8 +63,21 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
       24 * 60 * 60 * 1000,
     );
 
-    // Run cleanup once on startup
     await this.cleanupOldEntries();
+  }
+
+  private startPolling(): void {
+    const scheduleNextPoll = () => {
+      this.pollInterval = setTimeout(async () => {
+        try {
+          await this.pollAclLog();
+        } catch (error) {
+          this.logger.error(`Failed to poll ACL log: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        scheduleNextPoll();
+      }, this.pollIntervalMs);
+    };
+    scheduleNextPoll();
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -148,11 +156,11 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
 
   private async cleanupOldEntries(): Promise<void> {
     try {
-      const cutoffTimestamp = Math.floor(Date.now() / 1000) - this.retentionDays * 24 * 60 * 60;
+      const cutoffTimestamp = Math.floor(this.retentionService.getAclRetentionCutoff().getTime() / 1000);
       const deleted = await this.storageClient.pruneOldEntries(cutoffTimestamp);
 
       if (deleted > 0) {
-        this.logger.log(`Cleaned up ${deleted} entries older than ${this.retentionDays} days`);
+        this.logger.log(`Cleaned up ${deleted} old audit entries`);
       }
     } catch (error) {
       this.logger.error(`Error cleaning up old entries: ${error instanceof Error ? error.message : 'Unknown error'}`);
