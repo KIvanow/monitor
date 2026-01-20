@@ -13,7 +13,6 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   private pollInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private lastSeenTimestamp: number = 0;
-  private readonly enabled: boolean;
   private readonly sourceHost: string;
   private readonly sourcePort: number;
 
@@ -27,7 +26,6 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     private readonly settingsService: SettingsService,
     private readonly retentionService: RetentionService,
   ) {
-    this.enabled = this.configService.get<boolean>('storage.audit.enabled', true);
     this.sourceHost = this.configService.get<string>('database.host', 'localhost');
     this.sourcePort = this.configService.get<number>('database.port', 6379);
   }
@@ -37,11 +35,6 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    if (!this.enabled) {
-      this.logger.log('Audit trail is disabled');
-      return;
-    }
-
     if (!this.storageClient.isReady()) {
       this.logger.error('Storage client is not ready');
       return;

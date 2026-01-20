@@ -1,3 +1,8 @@
+---
+title: Configuration
+nav_order: 2
+---
+
 # Configuration Reference
 
 This document provides comprehensive configuration information for BetterDB Monitor.
@@ -5,6 +10,7 @@ This document provides comprehensive configuration information for BetterDB Moni
 ## Table of Contents
 
 - [Environment Variables](#environment-variables)
+  - [Data Retention](#data-retention)
 - [Docker Usage](#docker-usage)
 - [HTTP Endpoints](#http-endpoints)
 - [Runtime Settings](#runtime-settings)
@@ -43,15 +49,13 @@ This document provides comprehensive configuration information for BetterDB Moni
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AUDIT_ENABLED` | No | `true` | Enable ACL audit trail collection |
 | `AUDIT_POLL_INTERVAL_MS` | No | `60000` | ACL audit polling interval (milliseconds) |
-| `AUDIT_RETENTION_DAYS` | No | `30` | Number of days to retain audit data |
 
 ### Anomaly Detection
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANOMALY_DETECTION_ENABLED` | No | `true` | Enable anomaly detection features |
+| `ANOMALY_DETECTION_ENABLED` | No | `true` | Enable anomaly detection features (Pro tier required) |
 | `ANOMALY_POLL_INTERVAL_MS` | No | `1000` | Anomaly detection polling interval (milliseconds) |
 | `ANOMALY_CACHE_TTL_MS` | No | `3600000` | Anomaly detection cache TTL (milliseconds) |
 | `ANOMALY_PROMETHEUS_INTERVAL_MS` | No | `30000` | Prometheus summary update interval (milliseconds) |
@@ -61,6 +65,21 @@ This document provides comprehensive configuration information for BetterDB Moni
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `CLIENT_ANALYTICS_POLL_INTERVAL_MS` | No | `60000` | Client analytics polling interval (milliseconds) |
+
+### Data Retention
+
+Data retention is automatically managed based on your license tier:
+
+| Tier | Data Retention | ACL Audit Retention |
+|------|----------------|---------------------|
+| **Community** | 7 days | 24 hours |
+| **Pro** | 90 days | 90 days |
+| **Enterprise** | 365 days | 365 days |
+
+**Note**: Retention periods cannot be configured via environment variables. They are determined by your active license tier. This applies to:
+- Client analytics snapshots
+- Anomaly detection events
+- ACL audit trail entries
 
 ### License Configuration
 
@@ -81,6 +100,19 @@ This document provides comprehensive configuration information for BetterDB Moni
 | `KEY_ANALYTICS_INTERVAL_MS` | No | `300000` | Key analytics collection interval (milliseconds) |
 
 **Note**: Key analytics features require a Pro tier license.
+
+### AI Features (Experimental)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `AI_ENABLED` | No | `false` | Enable AI-powered features (chatbot, RAG) |
+| `OLLAMA_BASE_URL` | No | `http://localhost:11434` | Ollama API endpoint for LLM inference |
+| `OLLAMA_KEEP_ALIVE` | No | `24h` | Keep-alive duration for Ollama models |
+| `AI_USE_LLM_CLASSIFICATION` | No | `false` | Use LLM for anomaly classification |
+| `LANCEDB_PATH` | No | `./data/lancedb` | Path to LanceDB vector database |
+| `VALKEY_DOCS_PATH` | No | `./data/valkey-docs` | Path to indexed Valkey documentation |
+
+**Note**: AI features are experimental and require explicit opt-in. You must have Ollama running locally or accessible at the configured URL.
 
 ## Docker Usage
 

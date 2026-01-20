@@ -1,3 +1,8 @@
+---
+title: Prometheus Metrics
+nav_order: 3
+---
+
 # Prometheus Metrics Reference
 
 Complete reference for all metrics exposed by BetterDB Monitor at the `/prometheus/metrics` endpoint.

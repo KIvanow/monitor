@@ -1,3 +1,8 @@
+---
+title: Anomaly Detection
+nav_order: 4
+---
+
 # Anomaly Detection Guide
 
 Comprehensive guide to BetterDB's real-time anomaly detection system for Valkey and Redis databases.

@@ -18,7 +18,6 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
   private pollInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private isPolling = false;
-  private readonly enabled: boolean;
 
   constructor(
     @Inject('DATABASE_CLIENT') private dbClient: DatabasePort,
@@ -27,25 +26,21 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
     private prometheusService: PrometheusService,
     private retention: RetentionService,
     private settingsService: SettingsService,
-  ) {
-    this.enabled = this.configService.get<boolean>('storage.clientAnalytics.enabled', true);
-  }
+  ) {}
 
   private get pollIntervalMs(): number {
     return this.settingsService.getCachedSettings().clientAnalyticsPollIntervalMs;
   }
 
   async onModuleInit(): Promise<void> {
-    if (this.enabled) {
-      this.logger.log(`Starting client analytics polling (interval: ${this.pollIntervalMs}ms)`);
-      await this.startPolling();
+    this.logger.log(`Starting client analytics polling (interval: ${this.pollIntervalMs}ms)`);
+    await this.startPolling();
 
-      await this.cleanup();
-      this.cleanupInterval = setInterval(
-        () => this.cleanup().catch((err) => this.logger.error('Client analytics cleanup failed:', err)),
-        24 * 60 * 60 * 1000,
-      );
-    }
+    await this.cleanup();
+    this.cleanupInterval = setInterval(
+      () => this.cleanup().catch((err) => this.logger.error('Client analytics cleanup failed:', err)),
+      24 * 60 * 60 * 1000,
+    );
   }
 
   onModuleDestroy(): void {

@@ -1,0 +1,28 @@
+title: BetterDB Docs
+description: Documentation for BetterDB - Valkey & Redis Monitoring
+remote_theme: just-the-docs/just-the-docs@v0.10.0
+
+url: https://docs.betterdb.com
+baseurl: ""
+
+search_enabled: true
+search.heading_level: 3
+
+color_scheme: dark
+
+# Header links
+aux_links:
+  "← betterdb.com":
+    - "https://betterdb.com"
+  "GitHub":
+    - "https://github.com/betterdb/betterdb-monitor"
+
+aux_links_new_tab: false
+
+# Footer
+footer_content: "Copyright &copy; 2025 BetterDB. <a href=\"https://betterdb.com\">betterdb.com</a>"
+
+back_to_top: true
+back_to_top_text: "Back to top"
+enable_copy_code_button: true
+heading_anchors: true

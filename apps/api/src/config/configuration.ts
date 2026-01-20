@@ -12,14 +12,10 @@ export interface StorageConfig {
     filepath: string;
   };
   audit: {
-    enabled: boolean;
     pollIntervalMs: number;
-    retentionDays: number;
   };
   clientAnalytics: {
-    enabled: boolean;
     pollIntervalMs: number;
-    retentionDays: number;
   };
 }
 
@@ -35,7 +31,6 @@ export interface AiConfig {
 export interface AnomalyConfig {
   enabled: boolean;
   pollIntervalMs: number;
-  retentionDays: number;
   cacheTtlMs: number;
   prometheusSummaryIntervalMs: number;
 }
@@ -61,14 +56,10 @@ export default (): AppConfig => ({
       filepath: process.env.STORAGE_SQLITE_PATH || './data/audit.db',
     },
     audit: {
-      enabled: process.env.AUDIT_ENABLED === 'true' || true,
       pollIntervalMs: parseInt(process.env.AUDIT_POLL_INTERVAL_MS || '60000', 10),
-      retentionDays: parseInt(process.env.AUDIT_RETENTION_DAYS || '30', 10),
     },
     clientAnalytics: {
-      enabled: process.env.CLIENT_ANALYTICS_ENABLED === 'true' || true,
       pollIntervalMs: parseInt(process.env.CLIENT_ANALYTICS_POLL_INTERVAL_MS || '60000', 10),
-      retentionDays: parseInt(process.env.CLIENT_ANALYTICS_RETENTION_DAYS || '7', 10),
     },
   },
   ai: {
@@ -82,7 +73,6 @@ export default (): AppConfig => ({
   anomaly: {
     enabled: process.env.ANOMALY_DETECTION_ENABLED !== 'false',
     pollIntervalMs: parseInt(process.env.ANOMALY_POLL_INTERVAL_MS || '1000', 10),
-    retentionDays: parseInt(process.env.ANOMALY_RETENTION_DAYS || '30', 10),
     cacheTtlMs: parseInt(process.env.ANOMALY_CACHE_TTL_MS || '3600000', 10),
     prometheusSummaryIntervalMs: parseInt(process.env.ANOMALY_PROMETHEUS_INTERVAL_MS || '30000', 10),
   },

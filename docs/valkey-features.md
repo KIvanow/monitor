@@ -1,3 +1,8 @@
+---
+title: Valkey Features
+nav_order: 5
+---
+
 # Valkey-Specific Features Guide
 
 Complete guide to BetterDB's Valkey-first approach and exclusive features for Valkey deployments.
