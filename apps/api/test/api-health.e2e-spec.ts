@@ -48,13 +48,26 @@ describe('Health API (E2E)', () => {
       expect(response.headers['content-type']).toMatch(/application\/json/);
     });
 
-    it('should have commandLog capability true for Valkey, false for Redis', async () => {
+    it('should have commandLog capability based on database type and version', async () => {
       const isValkey = healthResponse.database.type === 'valkey';
       const hasCommandLog = healthResponse.capabilities?.hasCommandLog;
+      const version = healthResponse.database.version;
 
-      if (isValkey) {
-        expect(hasCommandLog).toBe(true);
+      expect(version).toBeDefined();
+
+      if (isValkey && version) {
+        // COMMANDLOG requires Valkey 8.1+
+        const versionParts = version.split('.').map((v) => parseInt(v, 10));
+        const majorVersion = versionParts[0] || 0;
+        const minorVersion = versionParts[1] || 0;
+
+        if (majorVersion > 8 || (majorVersion === 8 && minorVersion >= 1)) {
+          expect(hasCommandLog).toBe(true);
+        } else {
+          expect(hasCommandLog).toBe(false);
+        }
       } else {
+        // Redis doesn't have COMMANDLOG
         expect(hasCommandLog).toBe(false);
       }
     });

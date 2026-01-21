@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { DatabasePort, DatabaseCapabilities } from '../../common/interfaces/database-port.interface';
 import { InfoParser } from '../parsers/info.parser';
 import { MetricsParser } from '../parsers/metrics.parser';
+import { CLUSTER_TOTAL_SLOTS } from '../../common/constants/cluster.constants';
 import {
   InfoResponse,
   SlowLogEntry,
@@ -391,8 +392,11 @@ export class UnifiedDatabaseAdapter implements DatabasePort {
       throw new Error('CLUSTER SLOT-STATS not supported on this database version');
     }
 
-    const rawStats = await this.client.call('CLUSTER', 'SLOT-STATS', 'ORDERBY', orderBy, 'LIMIT', limit);
-    return MetricsParser.parseSlotStats(rawStats as unknown[][]);
+    // Validate and clamp limit to valid range (1 to total cluster slots)
+    const validLimit = Math.max(1, Math.min(limit, CLUSTER_TOTAL_SLOTS));
+
+    const rawStats = await this.client.call('CLUSTER', 'SLOT-STATS', 'ORDERBY', orderBy, 'LIMIT', validLimit);
+    return MetricsParser.parseSlotStats(rawStats as unknown[]);
   }
 
   async getConfigValue(parameter: string): Promise<string | null> {

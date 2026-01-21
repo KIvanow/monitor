@@ -202,19 +202,63 @@ export class MetricsParser {
     });
   }
 
-  static parseSlotStats(rawStats: unknown[][]): SlotStats {
+  static parseSlotStats(rawStats: unknown[] | unknown[][]): SlotStats {
     const stats: SlotStats = {};
 
-    for (const slotData of rawStats) {
-      const slotNumber = slotData[0] as number;
-      const metrics = slotData[1] as Record<string, number>;
+    if (rawStats.length === 0) {
+      return stats;
+    }
 
-      stats[slotNumber.toString()] = {
-        key_count: metrics['key-count'] || 0,
-        expires_count: metrics['expires-count'] || 0,
-        total_reads: metrics['total-reads'] || 0,
-        total_writes: metrics['total-writes'] || 0,
-      } as SlotStatsMetric;
+    // iovalkey transforms CLUSTER SLOT-STATS response into nested format:
+    // [[slot, [metric_name, value]], [slot, [metric_name, value]], ...]
+    if (!Array.isArray(rawStats[0])) {
+      // If unexpected format, return empty stats
+      return stats;
+    }
+
+    const nestedStats = rawStats as unknown[][];
+
+    for (const entry of nestedStats) {
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+
+      const slot = entry[0];
+      const metricPair = entry[1];
+
+      if (typeof slot !== 'number' || !Array.isArray(metricPair) || metricPair.length < 2) {
+        continue;
+      }
+
+      const metricName = metricPair[0];
+      const metricValue = metricPair[1];
+
+      if (typeof metricName !== 'string' || typeof metricValue !== 'number') {
+        continue;
+      }
+
+      const slotKey = slot.toString();
+      if (!stats[slotKey]) {
+        stats[slotKey] = {
+          key_count: 0,
+          expires_count: 0,
+          total_reads: 0,
+          total_writes: 0,
+        };
+      }
+
+      switch (metricName) {
+        case 'key-count':
+          stats[slotKey].key_count = metricValue;
+          break;
+        case 'expires-count':
+          stats[slotKey].expires_count = metricValue;
+          break;
+        case 'total-reads':
+          stats[slotKey].total_reads = metricValue;
+          break;
+        case 'total-writes':
+          stats[slotKey].total_writes = metricValue;
+          break;
+      }
     }
 
     return stats;

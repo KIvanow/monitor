@@ -12,6 +12,7 @@ import type {
   ClientInfo,
   AclLogEntry,
   SlotStats,
+  ClusterNode,
   StoredAclEntry,
   AuditStats,
   SlowLogPatternAnalysis,
@@ -62,8 +63,13 @@ export const metricsApi = {
   getMemoryStats: () => fetchApi<MemoryStats>('/metrics/memory/stats'),
   getClients: () => fetchApi<ClientInfo[]>('/metrics/clients'),
   getAclLog: (count = 50) => fetchApi<AclLogEntry[]>(`/metrics/acl/log?count=${count}`),
+
+  // Cluster endpoints
+  getClusterInfo: () => fetchApi<Record<string, string>>('/metrics/cluster/info'),
+  getClusterNodes: () => fetchApi<ClusterNode[]>('/metrics/cluster/nodes'),
   getSlotStats: (orderBy: 'key-count' | 'cpu-usec' = 'key-count', limit = 100) =>
     fetchApi<SlotStats>(`/metrics/cluster/slot-stats?orderBy=${orderBy}&limit=${limit}`),
+
   getDbSize: () => fetchApi<{ size: number }>('/metrics/dbsize'),
   getRole: () => fetchApi<{ role: string; replicationOffset?: number; replicas?: unknown[] }>('/metrics/role'),
   getLatencyDoctor: () => fetchApi<{ report: string }>('/metrics/latency/doctor'),

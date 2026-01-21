@@ -16,6 +16,7 @@ import { ClientAnalyticsDeepDive } from './pages/ClientAnalyticsDeepDive';
 import { AiAssistant } from './pages/AiAssistant';
 import { AnomalyDashboard } from './pages/AnomalyDashboard';
 import { KeyAnalytics } from './pages/KeyAnalytics';
+import { ClusterDashboard } from './pages/ClusterDashboard';
 import { Settings } from './pages/Settings';
 import type { DatabaseCapabilities } from './types/metrics';
 import { Feature } from '@betterdb/shared';
@@ -83,6 +84,9 @@ function AppLayout() {
           <NavItem to="/client-analytics/deep-dive" active={location.pathname === '/client-analytics/deep-dive'}>
             Analytics Deep Dive
           </NavItem>
+          <NavItem to="/cluster" active={location.pathname === '/cluster'}>
+            Cluster
+          </NavItem>
           <NavItem
             to="/anomalies"
             active={location.pathname === '/anomalies'}
@@ -143,6 +147,7 @@ function AppLayout() {
             <Route path="/client-analytics/deep-dive" element={<ClientAnalyticsDeepDive />} />
             <Route path="/anomalies" element={<AnomalyDashboard />} />
             <Route path="/key-analytics" element={<KeyAnalytics />} />
+            <Route path="/cluster" element={<ClusterDashboard />} />
             <Route path="/audit" element={<AuditTrail />} />
             <Route path="/helper" element={<AiAssistant />} />
             <Route path="/settings" element={<Settings />} />

@@ -61,6 +61,9 @@ export interface InfoResponse {
     role: string;
     connected_slaves?: string;
   };
+  cluster?: {
+    cluster_enabled?: string;
+  };
   keyspace?: Record<string, string>;
 }
 
