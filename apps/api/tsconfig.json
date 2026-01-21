@@ -22,7 +22,9 @@
     "moduleResolution": "node",
     "paths": {
       "@app/*": ["apps/api/src/*"],
-      "@proprietary/*": ["proprietary/*"]
+      "@proprietary/*": ["proprietary/*"],
+      "@betterdb/shared": ["packages/shared/src/index.ts"],
+      "@betterdb/shared/license": ["packages/shared/src/license/index.ts"]
     }
   },
   "include": ["src/**/*", "../../proprietary/**/*"],

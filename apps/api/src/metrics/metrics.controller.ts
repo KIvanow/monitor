@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Delete, Query, Param, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { MetricsService } from './metrics.service';
+import { ClusterDiscoveryService, DiscoveredNode } from '../cluster/cluster-discovery.service';
+import { ClusterMetricsService, NodeStats, ClusterSlowlogEntry, ClusterClientEntry, ClusterCommandlogEntry, SlotMigration } from '../cluster/cluster-metrics.service';
 import {
   InfoResponse,
   SlowLogEntry,
@@ -38,12 +40,22 @@ import {
   ConfigValueResponseDto,
   DbSizeResponseDto,
   LastSaveResponseDto,
+  DiscoveredNodeDto,
+  NodeStatsDto,
+  ClusterSlowlogEntryDto,
+  ClusterClientEntryDto,
+  ClusterCommandlogEntryDto,
+  SlotMigrationDto,
 } from '../common/dto/metrics.dto';
 
 @ApiTags('metrics')
 @Controller('metrics')
 export class MetricsController {
-  constructor(private readonly metricsService: MetricsService) {}
+  constructor(
+    private readonly metricsService: MetricsService,
+    private readonly clusterDiscoveryService: ClusterDiscoveryService,
+    private readonly clusterMetricsService: ClusterMetricsService,
+  ) {}
 
   @Get('info')
   @ApiOperation({ summary: 'Get parsed INFO response', description: 'Retrieve parsed Valkey/Redis INFO command output, optionally filtered by sections' })
@@ -574,6 +586,156 @@ export class MetricsController {
     } catch (error) {
       throw new HttpException(
         `Failed to get last save time: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // New cluster endpoints
+
+  @Get('cluster/nodes/discover')
+  @ApiOperation({ summary: 'Discover cluster nodes', description: 'Discover and return all nodes in the cluster' })
+  @ApiResponse({ status: 200, description: 'Cluster nodes discovered successfully', type: [DiscoveredNodeDto] })
+  @ApiResponse({ status: 500, description: 'Failed to discover cluster nodes' })
+  async discoverClusterNodes(): Promise<DiscoveredNode[]> {
+    try {
+      return await this.clusterDiscoveryService.discoverNodes();
+    } catch (error) {
+      throw new HttpException(
+        `Failed to discover cluster nodes: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('cluster/nodes/:nodeId/info')
+  @ApiOperation({ summary: 'Get INFO from specific node', description: 'Retrieve INFO command output from a specific cluster node' })
+  @ApiParam({ name: 'nodeId', description: 'Node ID' })
+  @ApiResponse({ status: 200, description: 'Node INFO retrieved successfully', schema: { type: 'object' } })
+  @ApiResponse({ status: 500, description: 'Failed to get node info' })
+  async getNodeInfo(@Param('nodeId') nodeId: string): Promise<Record<string, unknown>> {
+    try {
+      return await this.clusterMetricsService.getNodeInfo(nodeId);
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get node info: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('cluster/node-stats')
+  @ApiOperation({ summary: 'Get comparative stats for all nodes', description: 'Retrieve performance and resource metrics for all cluster nodes' })
+  @ApiResponse({ status: 200, description: 'Cluster node stats retrieved successfully', type: [NodeStatsDto] })
+  @ApiResponse({ status: 500, description: 'Failed to get cluster node stats' })
+  async getClusterNodeStats(): Promise<NodeStats[]> {
+    try {
+      return await this.clusterMetricsService.getClusterNodeStats();
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get cluster node stats: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('cluster/slowlog')
+  @ApiOperation({ summary: 'Get slowlog aggregated from all cluster nodes', description: 'Retrieve slowlog entries from all nodes, merged and sorted' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Maximum number of entries to return (1-10000, default: 100)' })
+  @ApiResponse({ status: 200, description: 'Cluster slowlog retrieved successfully', type: [ClusterSlowlogEntryDto] })
+  @ApiResponse({ status: 400, description: 'Invalid limit parameter' })
+  @ApiResponse({ status: 500, description: 'Failed to get cluster slowlog' })
+  async getClusterSlowlog(@Query('limit') limit?: string): Promise<ClusterSlowlogEntry[]> {
+    try {
+      const parsedLimit = limit ? parseInt(limit, 10) : 100;
+
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 10000) {
+        throw new HttpException(
+          'Invalid limit parameter: must be a number between 1 and 10000',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      return await this.clusterMetricsService.getClusterSlowlog(parsedLimit);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        `Failed to get cluster slowlog: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('cluster/clients')
+  @ApiOperation({ summary: 'Get client list from all cluster nodes', description: 'Retrieve connected clients from all nodes' })
+  @ApiResponse({ status: 200, description: 'Cluster clients retrieved successfully', type: [ClusterClientEntryDto] })
+  @ApiResponse({ status: 500, description: 'Failed to get cluster clients' })
+  async getClusterClients(): Promise<ClusterClientEntry[]> {
+    try {
+      return await this.clusterMetricsService.getClusterClients();
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get cluster clients: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('cluster/commandlog')
+  @ApiOperation({ summary: 'Get commandlog from all cluster nodes (Valkey 8.1+)', description: 'Retrieve commandlog entries from all nodes, merged and sorted' })
+  @ApiQuery({ name: 'type', required: false, enum: ['slow', 'large-request', 'large-reply'], description: 'Filter by commandlog type' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Maximum number of entries to return (1-10000, default: 100)' })
+  @ApiResponse({ status: 200, description: 'Cluster commandlog retrieved successfully', type: [ClusterCommandlogEntryDto] })
+  @ApiResponse({ status: 400, description: 'Invalid parameters' })
+  @ApiResponse({ status: 500, description: 'Failed to get cluster commandlog' })
+  async getClusterCommandlog(
+    @Query('type') type?: string,
+    @Query('limit') limit?: string,
+  ): Promise<ClusterCommandlogEntry[]> {
+    try {
+      const validTypes = ['slow', 'large-request', 'large-reply'];
+      const parsedType = (type as CommandLogType) || 'slow';
+
+      if (type && !validTypes.includes(parsedType)) {
+        throw new HttpException(
+          `Invalid type parameter: must be one of ${validTypes.join(', ')}`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const parsedLimit = limit ? parseInt(limit, 10) : 100;
+
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 10000) {
+        throw new HttpException(
+          'Invalid limit parameter: must be a number between 1 and 10000',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      return await this.clusterMetricsService.getClusterCommandlog(parsedType, parsedLimit);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        `Failed to get cluster commandlog: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('cluster/migrations')
+  @ApiOperation({ summary: 'Get active slot migrations', description: 'Retrieve information about ongoing slot migrations in the cluster' })
+  @ApiResponse({ status: 200, description: 'Slot migrations retrieved successfully', type: [SlotMigrationDto] })
+  @ApiResponse({ status: 500, description: 'Failed to get slot migrations' })
+  async getSlotMigrations(): Promise<SlotMigration[]> {
+    try {
+      return await this.clusterMetricsService.getSlotMigrations();
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get slot migrations: ${error instanceof Error ? error.message : 'Unknown error'}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

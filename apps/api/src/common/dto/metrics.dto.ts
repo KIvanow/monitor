@@ -356,3 +356,125 @@ export class LastSaveResponseDto {
   @ApiProperty({ description: 'Unix timestamp of last save', example: 1704934800 })
   timestamp: number;
 }
+
+// Cluster-specific DTOs
+
+export class DiscoveredNodeDto {
+  @ApiProperty({ description: 'Node ID', example: 'abc123def456...' })
+  id: string;
+
+  @ApiProperty({ description: 'Node address (host:port)', example: '127.0.0.1:6379' })
+  address: string;
+
+  @ApiProperty({ description: 'Node role', enum: ['master', 'replica'], example: 'master' })
+  role: 'master' | 'replica';
+
+  @ApiPropertyOptional({ description: 'Master node ID (for replicas)', example: 'xyz789abc123...' })
+  masterId?: string;
+
+  @ApiProperty({ description: 'Slot ranges [[start, end], ...]', type: 'array', example: [[0, 5460]] })
+  slots: number[][];
+
+  @ApiProperty({ description: 'Node health status', example: true })
+  healthy: boolean;
+}
+
+export class NodeStatsDto {
+  @ApiProperty({ description: 'Node ID', example: 'abc123def456...' })
+  nodeId: string;
+
+  @ApiProperty({ description: 'Node address', example: '127.0.0.1:6379' })
+  nodeAddress: string;
+
+  @ApiProperty({ description: 'Node role', enum: ['master', 'replica'], example: 'master' })
+  role: 'master' | 'replica';
+
+  @ApiProperty({ description: 'Memory used in bytes', example: 10485760 })
+  memoryUsed: number;
+
+  @ApiProperty({ description: 'Peak memory used in bytes', example: 12582912 })
+  memoryPeak: number;
+
+  @ApiProperty({ description: 'Memory fragmentation ratio', example: 1.2 })
+  memoryFragmentationRatio: number;
+
+  @ApiProperty({ description: 'Operations per second', example: 1000 })
+  opsPerSec: number;
+
+  @ApiProperty({ description: 'Connected clients count', example: 50 })
+  connectedClients: number;
+
+  @ApiProperty({ description: 'Blocked clients count', example: 2 })
+  blockedClients: number;
+
+  @ApiProperty({ description: 'Input traffic in kbps', example: 100.5 })
+  inputKbps: number;
+
+  @ApiProperty({ description: 'Output traffic in kbps', example: 200.5 })
+  outputKbps: number;
+
+  @ApiPropertyOptional({ description: 'Replication offset', example: 12345678 })
+  replicationOffset?: number;
+
+  @ApiPropertyOptional({ description: 'Master link status (for replicas)', example: 'up' })
+  masterLinkStatus?: string;
+
+  @ApiPropertyOptional({ description: 'Master last IO seconds ago (for replicas)', example: 0 })
+  masterLastIoSecondsAgo?: number;
+
+  @ApiPropertyOptional({ description: 'CPU system time', example: 10.5 })
+  cpuSys?: number;
+
+  @ApiPropertyOptional({ description: 'CPU user time', example: 20.3 })
+  cpuUser?: number;
+
+  @ApiPropertyOptional({ description: 'Uptime in seconds', example: 86400 })
+  uptimeSeconds?: number;
+}
+
+export class ClusterSlowlogEntryDto extends SlowLogEntryDto {
+  @ApiProperty({ description: 'Source node ID', example: 'abc123def456...' })
+  nodeId: string;
+
+  @ApiProperty({ description: 'Source node address', example: '127.0.0.1:6379' })
+  nodeAddress: string;
+}
+
+export class ClusterClientEntryDto extends ClientInfoDto {
+  @ApiProperty({ description: 'Source node ID', example: 'abc123def456...' })
+  nodeId: string;
+
+  @ApiProperty({ description: 'Source node address', example: '127.0.0.1:6379' })
+  nodeAddress: string;
+}
+
+export class ClusterCommandlogEntryDto extends CommandLogEntryDto {
+  @ApiProperty({ description: 'Source node ID', example: 'abc123def456...' })
+  nodeId: string;
+
+  @ApiProperty({ description: 'Source node address', example: '127.0.0.1:6379' })
+  nodeAddress: string;
+}
+
+export class SlotMigrationDto {
+  @ApiProperty({ description: 'Slot number', example: 5461 })
+  slot: number;
+
+  @ApiProperty({ description: 'Source node ID', example: 'abc123def456...' })
+  sourceNodeId: string;
+
+  @ApiProperty({ description: 'Source node address', example: '127.0.0.1:6379' })
+  sourceAddress: string;
+
+  @ApiProperty({ description: 'Target node ID', example: 'xyz789abc123...' })
+  targetNodeId: string;
+
+  @ApiProperty({ description: 'Target node address', example: '127.0.0.1:6380' })
+  targetAddress: string;
+
+  @ApiProperty({ description: 'Migration state', enum: ['migrating', 'importing'], example: 'migrating' })
+  state: 'migrating' | 'importing';
+
+  @ApiPropertyOptional({ description: 'Number of keys remaining to migrate', example: 2450 })
+  keysRemaining?: number;
+}

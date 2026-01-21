@@ -3,7 +3,7 @@ import { PaymentRequiredError } from '../api/client';
 import { useUpgradePrompt } from './useUpgradePrompt';
 
 interface UsePollingOptions<T> {
-  fetcher: () => Promise<T>;
+  fetcher: ((signal?: AbortSignal) => Promise<T>) | ((...args: any[]) => Promise<T>);
   interval?: number;
   enabled?: boolean;
 }
@@ -14,6 +14,7 @@ export function usePolling<T>({ fetcher, interval = 5000, enabled = true }: UseP
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const fetcherRef = useRef(fetcher);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { showUpgradePrompt } = useUpgradePrompt();
 
   useEffect(() => {
@@ -26,12 +27,26 @@ export function usePolling<T>({ fetcher, interval = 5000, enabled = true }: UseP
     }
 
     const refresh = async () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       try {
         setError(null);
-        const result = await fetcherRef.current();
-        setData(result);
-        setLastUpdated(new Date());
+        const result = await (fetcherRef.current as (signal?: AbortSignal) => Promise<T>)(abortController.signal);
+
+        if (!abortController.signal.aborted) {
+          setData(result);
+          setLastUpdated(new Date());
+        }
       } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') {
+          return;
+        }
+
         if (e instanceof PaymentRequiredError) {
           showUpgradePrompt(e);
           setError(e);
@@ -39,13 +54,22 @@ export function usePolling<T>({ fetcher, interval = 5000, enabled = true }: UseP
         }
         setError(e instanceof Error ? e : new Error('Unknown error'));
       } finally {
-        setLoading(false);
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     refresh();
     const timer = setInterval(refresh, interval);
-    return () => clearInterval(timer);
+
+    return () => {
+      clearInterval(timer);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
   }, [interval, enabled, showUpgradePrompt]);
 
   const manualRefresh = async () => {

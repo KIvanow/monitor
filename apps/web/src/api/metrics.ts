@@ -30,6 +30,13 @@ import type {
   SpikeDetectionParams,
   SpikeDetectionResponse,
 } from '../types/metrics';
+import type {
+  DiscoveredNode,
+  NodeStats,
+  ClusterSlowlogEntry,
+  ClusterClientEntry,
+  SlotMigration,
+} from '../types/cluster';
 
 export const metricsApi = {
   getHealth: () => fetchApi<HealthResponse>('/health'),
@@ -69,6 +76,20 @@ export const metricsApi = {
   getClusterNodes: () => fetchApi<ClusterNode[]>('/metrics/cluster/nodes'),
   getSlotStats: (orderBy: 'key-count' | 'cpu-usec' = 'key-count', limit = 100) =>
     fetchApi<SlotStats>(`/metrics/cluster/slot-stats?orderBy=${orderBy}&limit=${limit}`),
+
+  // New cluster monitoring endpoints
+  discoverClusterNodes: (signal?: AbortSignal) =>
+    fetchApi<DiscoveredNode[]>('/metrics/cluster/nodes/discover', { signal }),
+  getClusterNodeStats: (signal?: AbortSignal) =>
+    fetchApi<NodeStats[]>('/metrics/cluster/node-stats', { signal }),
+  getClusterSlowlog: (limit = 100, signal?: AbortSignal) =>
+    fetchApi<ClusterSlowlogEntry[]>(`/metrics/cluster/slowlog?limit=${limit}`, { signal }),
+  getClusterClients: (signal?: AbortSignal) =>
+    fetchApi<ClusterClientEntry[]>('/metrics/cluster/clients', { signal }),
+  getSlotMigrations: (signal?: AbortSignal) =>
+    fetchApi<SlotMigration[]>('/metrics/cluster/migrations', { signal }),
+  getNodeInfo: (nodeId: string, signal?: AbortSignal) =>
+    fetchApi<Record<string, unknown>>(`/metrics/cluster/nodes/${nodeId}/info`, { signal }),
 
   getDbSize: () => fetchApi<{ size: number }>('/metrics/dbsize'),
   getRole: () => fetchApi<{ role: string; replicationOffset?: number; replicas?: unknown[] }>('/metrics/role'),

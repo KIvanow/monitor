@@ -16,6 +16,92 @@ export interface ClusterHealth {
 // Re-export from metrics for convenience
 export type { ClusterNode, SlotStatsMetric, SlotStats } from './metrics';
 
+// New cluster monitoring types
+
+export interface DiscoveredNode {
+  id: string;
+  address: string;
+  role: 'master' | 'replica';
+  masterId?: string;
+  slots: number[][];
+  healthy: boolean;
+}
+
+export interface NodeStats {
+  nodeId: string;
+  nodeAddress: string;
+  role: 'master' | 'replica';
+  memoryUsed: number;
+  memoryPeak: number;
+  memoryFragmentationRatio: number;
+  opsPerSec: number;
+  connectedClients: number;
+  blockedClients: number;
+  inputKbps: number;
+  outputKbps: number;
+  replicationOffset?: number;
+  masterLinkStatus?: string;
+  masterLastIoSecondsAgo?: number;
+  cpuSys?: number;
+  cpuUser?: number;
+  uptimeSeconds?: number;
+}
+
+export interface ClusterSlowlogEntry {
+  id: number;
+  timestamp: number;
+  duration: number;
+  command: string[];
+  clientAddress: string;
+  clientName: string;
+  nodeId: string;
+  nodeAddress: string;
+}
+
+export interface ClusterClientEntry {
+  id: string;
+  addr: string;
+  name: string;
+  age: number;
+  idle: number;
+  flags: string;
+  db: number;
+  sub: number;
+  psub: number;
+  multi: number;
+  qbuf: number;
+  qbufFree: number;
+  obl: number;
+  oll: number;
+  omem: number;
+  events: string;
+  cmd: string;
+  user: string;
+  nodeId: string;
+  nodeAddress: string;
+}
+
+export interface SlotMigration {
+  slot: number;
+  sourceNodeId: string;
+  sourceAddress: string;
+  targetNodeId: string;
+  targetAddress: string;
+  state: 'migrating' | 'importing';
+  keysRemaining?: number;
+}
+
+export interface ReplicationLagInfo {
+  masterId: string;
+  masterAddress: string;
+  replicaId: string;
+  replicaAddress: string;
+  offsetDiff: number;
+  lagMs: number;
+  linkStatus: 'up' | 'down';
+  status: 'in-sync' | 'slight-lag' | 'lagging' | 'disconnected';
+}
+
 // Utility functions for cluster operations
 export function formatSlotRanges(slots: number[][]): string {
   return slots

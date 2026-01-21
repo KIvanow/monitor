@@ -34,7 +34,6 @@ export async function fetchApi<T>(
     ...options?.headers as Record<string, string>,
   };
 
-  // Only set Content-Type if there's a body
   if (options?.body) {
     headers['Content-Type'] = 'application/json';
   }
@@ -42,6 +41,7 @@ export async function fetchApi<T>(
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers,
+    signal: options?.signal,
   });
 
   if (!response.ok) {

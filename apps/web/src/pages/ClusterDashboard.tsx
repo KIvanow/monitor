@@ -1,12 +1,17 @@
 import { useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { RefreshCw, Server, Info } from 'lucide-react';
 import { useCluster } from '../hooks/useCluster';
 import { ClusterHealthCard } from '../components/cluster/ClusterHealthCard';
 import { ClusterTopology } from '../components/cluster/ClusterTopology';
 import { SlotHeatmap } from '../components/cluster/SlotHeatmap';
 import { ClusterNodesTable } from '../components/cluster/ClusterNodesTable';
+import { NodeStatsComparison } from '../components/cluster/NodeStatsComparison';
+import { ClusterSlowlog } from '../components/cluster/ClusterSlowlog';
+import { ReplicationLag } from '../components/cluster/ReplicationLag';
+import { SlotMigrations } from '../components/cluster/SlotMigrations';
 import { buildSlotNodeMap } from '../types/cluster';
 
 export function ClusterDashboard() {
@@ -141,76 +146,103 @@ export function ClusterDashboard() {
         </button>
       </div>
 
-      {/* Health Card + Topology */}
-      <div className="grid md:grid-cols-4 gap-4">
-        <div className="md:col-span-1">
-          <ClusterHealthCard
-            health={health}
-            masterCount={masters.length}
-            replicaCount={replicas.length}
-          />
-        </div>
-        <div className="md:col-span-3">
-          <ClusterTopology nodes={nodes} />
-        </div>
-      </div>
+      {/* Tabs */}
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="nodes">Nodes</TabsTrigger>
+          <TabsTrigger value="replication">Replication</TabsTrigger>
+          <TabsTrigger value="slowlog">Slowlog</TabsTrigger>
+        </TabsList>
 
-      {/* Heatmap + Top Slots */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <SlotHeatmap slotStats={slotStats} nodes={nodes} hasSlotStats={hasSlotStats} />
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-4">
+          {/* Health Card + Topology */}
+          <div className="grid md:grid-cols-4 gap-4">
+            <div className="md:col-span-1">
+              <ClusterHealthCard
+                health={health}
+                masterCount={masters.length}
+                replicaCount={replicas.length}
+              />
+            </div>
+            <div className="md:col-span-3">
+              <ClusterTopology nodes={nodes} />
+            </div>
+          </div>
 
-        {/* Top Slots Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Top Slots by Key Count</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Slots with the highest number of keys
-            </p>
-          </CardHeader>
-          <CardContent>
-            {hasSlotStats && topSlots.length > 0 ? (
-              <div className="space-y-2">
-                {topSlots.map((slotData, idx) => (
-                  <div
-                    key={slotData.slot}
-                    className="flex items-center justify-between p-3 bg-muted/30 rounded text-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="text-xs font-medium text-muted-foreground w-6">
-                        #{idx + 1}
-                      </div>
-                      <div>
-                        <div className="font-medium">Slot {slotData.slot}</div>
-                        <div className="text-xs text-muted-foreground font-mono">
-                          {getNodeAddress(slotData.nodeId)}
+          {/* Heatmap + Migrations */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <SlotHeatmap slotStats={slotStats} nodes={nodes} hasSlotStats={hasSlotStats} />
+            <SlotMigrations />
+          </div>
+
+          {/* Top Slots */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Top Slots by Key Count</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Slots with the highest number of keys
+              </p>
+            </CardHeader>
+            <CardContent>
+              {hasSlotStats && topSlots.length > 0 ? (
+                <div className="space-y-2">
+                  {topSlots.map((slotData, idx) => (
+                    <div
+                      key={slotData.slot}
+                      className="flex items-center justify-between p-3 bg-muted/30 rounded text-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="text-xs font-medium text-muted-foreground w-6">
+                          #{idx + 1}
+                        </div>
+                        <div>
+                          <div className="font-medium">Slot {slotData.slot}</div>
+                          <div className="text-xs text-muted-foreground font-mono">
+                            {getNodeAddress(slotData.nodeId)}
+                          </div>
                         </div>
                       </div>
+                      <div className="text-right">
+                        <div className="font-bold">{slotData.keyCount.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">keys</div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-bold">{slotData.keyCount.toLocaleString()}</div>
-                      <div className="text-xs text-muted-foreground">keys</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : hasSlotStats ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Info className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>No keys found in cluster</p>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Info className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">Slot statistics not available</p>
-                <p className="text-xs mt-1">Requires Valkey 8.0+</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  ))}
+                </div>
+              ) : hasSlotStats ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Info className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>No keys found in cluster</p>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Info className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">Slot statistics not available</p>
+                  <p className="text-xs mt-1">Requires Valkey 8.0+</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* Nodes Table */}
-      <ClusterNodesTable nodes={nodes} />
+        {/* Nodes Tab */}
+        <TabsContent value="nodes" className="space-y-4">
+          <NodeStatsComparison />
+          <ClusterNodesTable nodes={nodes} />
+        </TabsContent>
+
+        {/* Replication Tab */}
+        <TabsContent value="replication" className="space-y-4">
+          <ReplicationLag />
+        </TabsContent>
+
+        {/* Slowlog Tab */}
+        <TabsContent value="slowlog" className="space-y-4">
+          <ClusterSlowlog />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

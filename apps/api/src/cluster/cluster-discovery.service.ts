@@ -1,0 +1,319 @@
+import { Injectable, Logger, Inject, OnModuleDestroy } from '@nestjs/common';
+import Valkey from 'iovalkey';
+import { DatabasePort } from '../common/interfaces/database-port.interface';
+import { ClusterNode } from '../common/types/metrics.types';
+
+export interface DiscoveredNode {
+  id: string;
+  address: string; // host:port
+  role: 'master' | 'replica';
+  masterId?: string;
+  slots: number[][];
+  healthy: boolean;
+}
+
+export interface NodeConnection {
+  node: DiscoveredNode;
+  client: Valkey;
+  lastHealthCheck: number;
+  healthy: boolean;
+}
+
+export interface NodeHealth {
+  nodeId: string;
+  address: string;
+  healthy: boolean;
+  lastCheck: number;
+  error?: string;
+}
+
+@Injectable()
+export class ClusterDiscoveryService implements OnModuleDestroy {
+  private readonly logger = new Logger(ClusterDiscoveryService.name);
+  private discoveredNodes: Map<string, NodeConnection> = new Map();
+  private lastDiscoveryTime: number = 0;
+  private discoveryCache: DiscoveredNode[] = [];
+  private readonly DISCOVERY_CACHE_TTL = 30000; // 30 seconds
+  private readonly CONNECTION_TIMEOUT = 5000; // 5 seconds
+  private readonly HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+  private readonly MAX_CONNECTIONS = 100; // Maximum number of concurrent connections
+
+  constructor(
+    @Inject('DATABASE_CLIENT')
+    private readonly dbClient: DatabasePort,
+  ) {}
+
+  async onModuleDestroy() {
+    await this.disconnectAll();
+  }
+
+  async discoverNodes(): Promise<DiscoveredNode[]> {
+    if (
+      this.discoveryCache.length > 0 &&
+      Date.now() - this.lastDiscoveryTime < this.DISCOVERY_CACHE_TTL
+    ) {
+      return this.discoveryCache;
+    }
+
+    try {
+      const clusterNodes: ClusterNode[] = await this.dbClient.getClusterNodes();
+      const discovered: DiscoveredNode[] = [];
+
+      for (const node of clusterNodes) {
+        const isHealthy =
+          node.flags.includes('connected') ||
+          (!node.flags.includes('disconnected') && !node.flags.includes('fail'));
+
+        const isMaster = node.flags.includes('master');
+        const isReplica = node.flags.includes('slave') || node.flags.includes('replica');
+
+        if (!isMaster && !isReplica) {
+          continue;
+        }
+
+        discovered.push({
+          id: node.id,
+          address: node.address,
+          role: isMaster ? 'master' : 'replica',
+          masterId: isMaster ? undefined : node.master,
+          slots: node.slots,
+          healthy: isHealthy,
+        });
+      }
+
+      this.discoveryCache = discovered;
+      this.lastDiscoveryTime = Date.now();
+
+      this.logger.log(
+        `Discovered ${discovered.length} nodes (${discovered.filter(n => n.role === 'master').length} masters, ${discovered.filter(n => n.role === 'replica').length} replicas)`,
+      );
+
+      return discovered;
+    } catch (error) {
+      this.logger.error(
+        `Failed to discover cluster nodes: ${error instanceof Error ? error.message : error}`,
+      );
+      throw error;
+    }
+  }
+
+  async getNodeConnection(nodeId: string): Promise<Valkey> {
+    const existingConnection = this.discoveredNodes.get(nodeId);
+    if (existingConnection) {
+      if (
+        existingConnection.client.status === 'ready' &&
+        Date.now() - existingConnection.lastHealthCheck < this.HEALTH_CHECK_INTERVAL
+      ) {
+        return existingConnection.client;
+      }
+
+      if (existingConnection.client.status !== 'ready') {
+        try {
+          await existingConnection.client.connect();
+          existingConnection.lastHealthCheck = Date.now();
+          existingConnection.healthy = true;
+          return existingConnection.client;
+        } catch (error) {
+          this.logger.warn(`Failed to reconnect to node ${nodeId}: ${error}`);
+          existingConnection.healthy = false;
+        }
+      }
+    }
+
+    if (this.discoveredNodes.size >= this.MAX_CONNECTIONS) {
+      this.logger.warn(
+        `Connection limit reached (${this.MAX_CONNECTIONS}). Cleaning up idle connections...`,
+      );
+      await this.cleanupIdleConnections(this.HEALTH_CHECK_INTERVAL);
+
+      if (this.discoveredNodes.size >= this.MAX_CONNECTIONS) {
+        const oldestNodeId = this.findOldestConnection();
+        if (oldestNodeId) {
+          this.logger.warn(`Closing oldest connection to ${oldestNodeId} to make room for new connection`);
+          const oldConnection = this.discoveredNodes.get(oldestNodeId);
+          if (oldConnection) {
+            await oldConnection.client.quit().catch(() => {/* ignore */});
+            this.discoveredNodes.delete(oldestNodeId);
+          }
+        }
+      }
+    }
+
+    const nodes = await this.discoverNodes();
+    const node = nodes.find((n) => n.id === nodeId);
+
+    if (!node) {
+      throw new Error(`Node ${nodeId} not found in cluster`);
+    }
+
+    // Cluster node addresses include bus port: "host:port@busport"
+    // We only need the client port, so split on '@' first
+    const [host, portStr] = node.address.split('@')[0].split(':');
+    const port = parseInt(portStr, 10);
+
+    if (!host || isNaN(port)) {
+      throw new Error(`Invalid node address: ${node.address}`);
+    }
+
+    const primaryClient = this.dbClient.getClient();
+    const username = primaryClient.options.username || '';
+    const password = primaryClient.options.password || '';
+
+    const client = new Valkey({
+      host,
+      port,
+      username,
+      password,
+      lazyConnect: true,
+      connectTimeout: this.CONNECTION_TIMEOUT,
+      enableOfflineQueue: false,
+      connectionName: `BetterDB-Monitor-Node-${node.id.substring(0, 8)}`,
+    });
+
+    try {
+      await Promise.race([
+        client.connect(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Connection timeout')), this.CONNECTION_TIMEOUT),
+        ),
+      ]);
+
+      const connection: NodeConnection = {
+        node,
+        client,
+        lastHealthCheck: Date.now(),
+        healthy: true,
+      };
+
+      this.discoveredNodes.set(nodeId, connection);
+      this.logger.log(`Connected to node ${nodeId} at ${host}:${port}`);
+
+      return client;
+    } catch (error) {
+      this.logger.error(
+        `Failed to connect to node ${nodeId} at ${host}:${port}: ${error instanceof Error ? error.message : error}`,
+      );
+
+      await client.quit().catch(() => {});
+
+      throw error;
+    }
+  }
+
+  async healthCheckAll(): Promise<NodeHealth[]> {
+    const nodes = await this.discoverNodes();
+    const healthChecks: Promise<NodeHealth>[] = [];
+
+    for (const node of nodes) {
+      healthChecks.push(this.healthCheckNode(node));
+    }
+
+    return Promise.all(healthChecks);
+  }
+
+  private async healthCheckNode(node: DiscoveredNode): Promise<NodeHealth> {
+    try {
+      const client = await this.getNodeConnection(node.id);
+      const result = await Promise.race([
+        client.ping(),
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('Health check timeout')), 2000),
+        ),
+      ]);
+
+      const healthy = result === 'PONG';
+
+      const connection = this.discoveredNodes.get(node.id);
+      if (connection) {
+        connection.healthy = healthy;
+        connection.lastHealthCheck = Date.now();
+      }
+
+      return {
+        nodeId: node.id,
+        address: node.address,
+        healthy,
+        lastCheck: Date.now(),
+      };
+    } catch (error) {
+      const connection = this.discoveredNodes.get(node.id);
+      if (connection) {
+        connection.healthy = false;
+        connection.lastHealthCheck = Date.now();
+      }
+
+      return {
+        nodeId: node.id,
+        address: node.address,
+        healthy: false,
+        lastCheck: Date.now(),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  getActiveConnections(): NodeConnection[] {
+    return Array.from(this.discoveredNodes.values());
+  }
+
+  async disconnectAll(): Promise<void> {
+    this.logger.log(`Disconnecting from ${this.discoveredNodes.size} nodes`);
+
+    const disconnectPromises: Promise<void>[] = [];
+
+    for (const [nodeId, connection] of this.discoveredNodes.entries()) {
+      disconnectPromises.push(
+        connection.client.quit().then(() => undefined).catch((error) => {
+          this.logger.warn(
+            `Failed to disconnect from node ${nodeId}: ${error instanceof Error ? error.message : error}`,
+          );
+        }),
+      );
+    }
+
+    await Promise.allSettled(disconnectPromises);
+    this.discoveredNodes.clear();
+    this.logger.log('All node connections closed');
+  }
+
+  async cleanupIdleConnections(maxIdleTime: number = 60000): Promise<void> {
+    const now = Date.now();
+    const toRemove: string[] = [];
+
+    for (const [nodeId, connection] of this.discoveredNodes.entries()) {
+      if (now - connection.lastHealthCheck > maxIdleTime) {
+        toRemove.push(nodeId);
+      }
+    }
+
+    if (toRemove.length > 0) {
+      this.logger.log(`Cleaning up ${toRemove.length} idle connections`);
+
+      for (const nodeId of toRemove) {
+        const connection = this.discoveredNodes.get(nodeId);
+        if (connection) {
+          await connection.client.quit().catch(() => {});
+          this.discoveredNodes.delete(nodeId);
+        }
+      }
+    }
+  }
+
+  private findOldestConnection(): string | null {
+    let oldestNodeId: string | null = null;
+    let oldestTime = Number.MAX_SAFE_INTEGER;
+
+    for (const [nodeId, connection] of this.discoveredNodes.entries()) {
+      if (connection.lastHealthCheck < oldestTime) {
+        oldestTime = connection.lastHealthCheck;
+        oldestNodeId = nodeId;
+      }
+    }
+
+    return oldestNodeId;
+  }
+
+  getConnectionPoolSize(): number {
+    return this.discoveredNodes.size;
+  }
+}
