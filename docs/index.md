@@ -28,6 +28,12 @@ Open [http://localhost:3001](http://localhost:3001) to access the dashboard.
 - [Anomaly Detection](anomaly-detection) — Understanding detection patterns and tuning sensitivity
 - [Valkey Features](valkey-features) — Valkey-specific capabilities like COMMANDLOG and SLOT-STATS
 
+## API Reference
+
+BetterDB includes interactive API documentation powered by Swagger/OpenAPI.
+
+Once running, access it at: [http://localhost:3001/api](http://localhost:3001/api)
+
 ## Links
 
 - [BetterDB Website](https://betterdb.com)

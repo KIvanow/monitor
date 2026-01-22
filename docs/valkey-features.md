@@ -321,7 +321,7 @@ DB_TYPE=redis
 Check detected capabilities:
 
 ```http
-GET /api/health
+GET /health
 ```
 
 **Response**:
@@ -737,9 +737,11 @@ connectionName: 'BetterDB-Monitor'
 
 BetterDB is designed to incorporate upcoming Valkey features as they become available.
 
+> **Note:** BetterDB already fully supports COMMANDLOG in Valkey 8.1+. This section describes potential *future Valkey enhancements* that BetterDB will adopt when released.
+
 ### Planned Integrations
 
-**COMMANDLOG enhancements** (future Valkey versions):
+**COMMANDLOG enhancements** (potential future Valkey versions):
 - Additional log types beyond slow/large-request/large-reply
 - Per-user COMMANDLOG tracking
 - COMMANDLOG export/import for analysis

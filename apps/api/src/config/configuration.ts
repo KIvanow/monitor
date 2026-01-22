@@ -53,7 +53,7 @@ export default (): AppConfig => ({
   storage: {
     type: 'sqlite',
     sqlite: {
-      filepath: process.env.STORAGE_SQLITE_PATH || './data/audit.db',
+      filepath: process.env.STORAGE_SQLITE_FILEPATH || './data/audit.db',
     },
     audit: {
       pollIntervalMs: parseInt(process.env.AUDIT_POLL_INTERVAL_MS || '60000', 10),

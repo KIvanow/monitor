@@ -34,7 +34,7 @@ This document provides comprehensive configuration information for BetterDB Moni
 |----------|----------|---------|-------------|
 | `STORAGE_TYPE` | No | `memory` | Storage backend: `memory`, `postgres`, or `sqlite` |
 | `STORAGE_URL` | Conditional | - | PostgreSQL connection URL (required if `STORAGE_TYPE=postgres`) |
-| `STORAGE_SQLITE_PATH` | No | `./data/audit.db` | SQLite database file path (only for `STORAGE_TYPE=sqlite`) |
+| `STORAGE_SQLITE_FILEPATH` | No | `./data/audit.db` | SQLite database file path (only for `STORAGE_TYPE=sqlite`) |
 
 **Note**: SQLite is only available for local development. Docker production images do not include SQLite support. Use `postgres` or `memory` for Docker deployments.
 
@@ -208,7 +208,14 @@ Once running, access the web interface at:
 
 ## HTTP Endpoints
 
-All endpoints are prefixed with `/api` when accessed through the web server.
+| Endpoint | Description |
+|----------|-------------|
+| `/` | Web UI dashboard |
+| `/health` | Health check endpoint |
+| `/api` | Swagger/OpenAPI documentation |
+| `/prometheus/metrics` | Prometheus metrics endpoint |
+
+All API endpoints are prefixed with `/api` when accessed through the web server.
 
 ### Health
 
