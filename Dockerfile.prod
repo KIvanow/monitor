@@ -17,7 +17,7 @@ COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
 
-# Install dependencies (excluding entitlement workspace)
+# Install dependencies (including devDeps needed for build - we'll remove them later)
 RUN pnpm install --frozen-lockfile --filter '!@app/entitlement'
 
 # Copy source code (excluding entitlement app)
@@ -33,6 +33,81 @@ RUN ln -sf ../apps/api/node_modules proprietary/node_modules
 RUN pnpm --filter api --filter web --filter @betterdb/shared build
 
 # ============================================
+# Cleanup Stage - Remove AI dependencies
+# ============================================
+FROM node:20-alpine AS cleanup
+
+WORKDIR /app
+
+# Copy node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=builder /app/packages/shared/node_modules ./packages/shared/node_modules
+
+# Remove AI dependencies, devDependencies, and build tools (~150MB+ savings)
+# AI packages are only needed when AI_ENABLED=true
+# DevDependencies are only needed during build, not runtime
+# Must remove from BOTH top-level symlinks AND .pnpm store (where pnpm keeps actual files)
+RUN rm -rf \
+    # AI-related top-level symlinks
+    node_modules/@lancedb \
+    node_modules/@langchain \
+    node_modules/langchain \
+    node_modules/hnswlib-node \
+    node_modules/better-sqlite3 \
+    node_modules/apache-arrow \
+    node_modules/@apache-arrow \
+    node_modules/ollama \
+    node_modules/@huggingface \
+    node_modules/openai \
+    node_modules/js-tiktoken \
+    apps/api/node_modules/@lancedb \
+    apps/api/node_modules/@langchain \
+    apps/api/node_modules/langchain \
+    apps/api/node_modules/hnswlib-node \
+    apps/api/node_modules/better-sqlite3 \
+    apps/api/node_modules/apache-arrow \
+    apps/api/node_modules/@apache-arrow \
+    apps/api/node_modules/ollama \
+    apps/api/node_modules/@huggingface \
+    apps/api/node_modules/openai \
+    apps/api/node_modules/js-tiktoken \
+    # pnpm store - AI packages + devDependencies (actual files)
+    && find node_modules/.pnpm -maxdepth 1 -type d \( \
+        -name '@lancedb*' -o \
+        -name '@langchain*' -o \
+        -name 'langchain@*' -o \
+        -name 'hnswlib-node@*' -o \
+        -name 'better-sqlite3@*' -o \
+        -name 'apache-arrow@*' -o \
+        -name '@apache-arrow*' -o \
+        -name 'ollama@*' -o \
+        -name '@huggingface*' -o \
+        -name 'vectordb@*' -o \
+        -name '@napi-rs*' -o \
+        -name 'openai@*' -o \
+        -name 'js-tiktoken@*' -o \
+        -name 'typescript@*' -o \
+        -name 'turbo-*' -o \
+        -name '@types+*' -o \
+        -name 'prettier@*' -o \
+        -name 'eslint@*' -o \
+        -name '@typescript-eslint*' -o \
+        -name 'jest@*' -o \
+        -name 'ts-jest@*' -o \
+        -name '@nestjs+cli@*' -o \
+        -name '@nestjs+schematics@*' -o \
+        -name '@nestjs+testing@*' -o \
+        -name 'webpack@*' -o \
+        -name '@esbuild*' -o \
+        -name 'playwright*' \
+    \) -exec rm -rf {} + 2>/dev/null || true
+
+# Copy dist files and remove AI module
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+RUN rm -rf /app/apps/api/dist/proprietary/ai
+
+# ============================================
 # Production Stage (Without AI Features)
 # ============================================
 FROM node:20-alpine AS production
@@ -40,50 +115,28 @@ FROM node:20-alpine AS production
 # Install only wget for healthcheck (no build tools)
 RUN apk add --no-cache wget
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
-
 WORKDIR /app
 
-# Copy built files first (before package.json manipulation)
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
+# Copy CLEANED node_modules from cleanup stage (no AI packages in this layer)
+COPY --from=cleanup /app/node_modules ./node_modules
+COPY --from=cleanup /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=cleanup /app/packages/shared/node_modules ./packages/shared/node_modules
+
+# Copy package files for module resolution
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY packages/shared/package.json ./packages/shared/
+
+# Copy built files from cleanup stage (AI module already removed)
+COPY --from=cleanup /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/web/dist ./apps/api/public
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
-# Copy and modify package.json to remove AI dependencies
-COPY --from=builder /app/apps/api/package.json ./apps/api/package.json.tmp
-COPY --from=builder /app/packages/shared/package.json ./packages/shared/
-COPY --from=builder /app/package.json ./package.json.tmp
-COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml.tmp
-COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-
-# Remove AI dependencies from package.json using sed
-RUN sed -e '/@lancedb/d' \
-        -e '/@langchain/d' \
-        -e '/hnswlib-node/d' \
-        -e '/langchain/d' \
-        -e '/ollama/d' \
-        -e '/better-sqlite3/d' \
-        -e '/apache-arrow/d' \
-        -e '/@types\/better-sqlite3/d' \
-        ./apps/api/package.json.tmp > ./apps/api/package.json && \
-    sed -e '/@lancedb/d' \
-        -e '/@langchain/d' \
-        -e '/hnswlib-node/d' \
-        -e '/langchain/d' \
-        -e '/ollama/d' \
-        -e '/better-sqlite3/d' \
-        -e '/apache-arrow/d' \
-        ./package.json.tmp > ./package.json && \
-    mv ./pnpm-lock.yaml.tmp ./pnpm-lock.yaml && \
-    rm -f ./apps/api/package.json.tmp ./package.json.tmp
-
-# Install only the filtered dependencies (no frozen lockfile since we modified package.json)
-RUN pnpm install --prod --no-frozen-lockfile --no-strict-peer-dependencies
-
-# Create symlink for @proprietary path alias to work at runtime
+# Create symlink for @proprietary path alias (ai module already excluded)
 RUN mkdir -p /app/node_modules/@proprietary && \
-    ln -s /app/apps/api/dist/proprietary/* /app/node_modules/@proprietary/
+    for dir in /app/apps/api/dist/proprietary/*/; do \
+        ln -s "$dir" /app/node_modules/@proprietary/; \
+    done
 
 # Set environment defaults
 ENV NODE_ENV=production

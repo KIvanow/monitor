@@ -61,6 +61,10 @@ COPY --from=builder /app/apps/web/dist ./apps/api/public
 # Copy shared package dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
+# Create symlink for @proprietary path alias to work at runtime
+RUN mkdir -p /app/node_modules/@proprietary && \
+    ln -s /app/apps/api/dist/proprietary/* /app/node_modules/@proprietary/
+
 # Set environment defaults
 ENV NODE_ENV=production
 ENV PORT=3001
