@@ -16,7 +16,7 @@
     "build:api": "turbo build --filter=api",
     "build:web": "turbo build --filter=web",
     "build:entitlement": "cd apps/entitlement && pnpm build",
-    "start:prod": "NODE_ENV=production node apps/api/dist/main.js",
+    "start:prod": "NODE_ENV=production node apps/api/dist/apps/api/src/main.js",
     "start:entitlement": "cd apps/entitlement && pnpm start",
     "docker:build": "docker build -t betterdb/monitor .",
     "docker:build:multiarch": "docker buildx build --platform linux/amd64,linux/arm64 -t betterdb/monitor:latest .",
