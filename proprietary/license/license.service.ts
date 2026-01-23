@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import { Tier, Feature, TIER_FEATURES, TIER_INSTANCE_LIMITS, TIER_RETENTION_LIMITS, EntitlementResponse } from './types';
 
 interface CachedEntitlement {
@@ -15,6 +16,8 @@ export class LicenseService implements OnModuleInit {
   private readonly cacheTtlMs: number;
   private readonly maxStaleCacheMs: number;
   private readonly timeoutMs: number;
+  private readonly telemetryEnabled: boolean;
+  private readonly instanceId: string;
 
   private cache: CachedEntitlement | null = null;
 
@@ -24,9 +27,25 @@ export class LicenseService implements OnModuleInit {
     this.cacheTtlMs = parseInt(process.env.LICENSE_CACHE_TTL_MS || '3600000', 10);
     this.maxStaleCacheMs = parseInt(process.env.LICENSE_MAX_STALE_MS || '604800000', 10);
     this.timeoutMs = parseInt(process.env.LICENSE_TIMEOUT_MS || '10000', 10);
+    this.telemetryEnabled = process.env.BETTERDB_TELEMETRY !== 'false';
+    this.instanceId = this.generateInstanceId();
+  }
+
+  private generateInstanceId(): string {
+    const dbHost = process.env.DB_HOST || '';
+    const dbPort = process.env.DB_PORT || '';
+    const storageUrl = process.env.STORAGE_URL || '';
+    const licenseKey = process.env.BETTERDB_LICENSE_KEY || '';
+
+    const input = `${dbHost}|${dbPort}|${storageUrl}|${licenseKey}`;
+    return createHash('sha256').update(input).digest('hex').slice(0, 32);
   }
 
   async onModuleInit() {
+    if (!this.licenseKey && this.telemetryEnabled) {
+      // Community tier with telemetry enabled - send ping
+      this.pingTelemetry();
+    }
     await this.validateLicense();
   }
 
@@ -61,6 +80,8 @@ export class LicenseService implements OnModuleInit {
   private async checkOnline(): Promise<EntitlementResponse> {
     const payload = {
       licenseKey: this.licenseKey,
+      instanceId: this.instanceId,
+      eventType: 'license_check',
       stats: await this.collectStats(),
     };
 
@@ -91,7 +112,42 @@ export class LicenseService implements OnModuleInit {
       uptime: process.uptime(),
       nodeVersion: process.version,
       platform: process.platform,
+      arch: process.arch,
     };
+  }
+
+  private async pingTelemetry(): Promise<void> {
+    if (!this.telemetryEnabled) {
+      return;
+    }
+
+    try {
+      const payload = {
+        instanceId: this.instanceId,
+        eventType: 'telemetry_ping',
+        version: process.env.APP_VERSION || process.env.npm_package_version || 'unknown',
+        platform: process.platform,
+        arch: process.arch,
+        nodeVersion: process.version,
+        tier: 'community',
+      };
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
+      try {
+        await fetch(this.entitlementUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error) {
+      // Silent catch - telemetry should never block or error out
+    }
   }
 
   private getCommunityEntitlement(error?: string): EntitlementResponse {

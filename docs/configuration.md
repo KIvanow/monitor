@@ -86,10 +86,20 @@ Data retention is automatically managed based on your license tier:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `BETTERDB_LICENSE_KEY` | No | - | BetterDB Pro license key for premium features |
+| `BETTERDB_TELEMETRY` | No | `true` | Enable anonymous telemetry (set to `false` to disable) |
 | `ENTITLEMENT_URL` | No | `https://betterdb.com/api/v1/entitlements` | Entitlement validation endpoint |
 | `LICENSE_CACHE_TTL_MS` | No | `3600000` | License cache TTL (milliseconds) |
 | `LICENSE_MAX_STALE_MS` | No | `604800000` | Maximum stale license age (milliseconds) |
 | `LICENSE_TIMEOUT_MS` | No | `10000` | License validation timeout (milliseconds) |
+
+**Telemetry**: BetterDB Monitor collects anonymous usage telemetry to help improve the product. No personally identifiable information is collected. The telemetry includes:
+- Instance ID (deterministic hash derived from DB_HOST, DB_PORT, STORAGE_URL, and license key)
+- Application version
+- Platform and architecture (e.g., linux, x64)
+- Node.js version
+- License tier (community/pro/enterprise)
+
+To disable telemetry, set `BETTERDB_TELEMETRY=false` in your environment variables.
 
 ### Key Analytics (Pro Tier)
 

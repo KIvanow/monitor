@@ -83,6 +83,14 @@ export interface EntitlementResponse {
 }
 
 export interface EntitlementRequest {
-  licenseKey: string;
+  licenseKey?: string;
+  instanceId: string;
+  eventType: 'license_check' | 'telemetry_ping';
   stats?: Record<string, any>;
+  // Telemetry-specific fields (for telemetry_ping)
+  version?: string;
+  platform?: string;
+  arch?: string;
+  nodeVersion?: string;
+  tier?: string;
 }
