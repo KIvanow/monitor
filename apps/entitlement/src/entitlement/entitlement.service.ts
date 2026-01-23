@@ -1,6 +1,6 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Tier, TIER_RETENTION_LIMITS, parseTier } from '@betterdb/shared';
+import { Tier, parseTier } from '@betterdb/shared';
 import type { EntitlementResponse, EntitlementRequest } from '@betterdb/shared';
 
 type ValidateRequest = EntitlementRequest;
@@ -13,6 +13,11 @@ export class EntitlementService {
 
   async validateLicense(req: ValidateRequest): Promise<EntitlementResponse> {
     const { licenseKey } = req;
+
+    if (!licenseKey) {
+      throw new UnauthorizedException('License key is required');
+    }
+
     const keyPrefix = licenseKey.substring(0, 8);
 
     const license = await this.prisma.license.findUnique({
@@ -30,8 +35,6 @@ export class EntitlementService {
       return {
         valid: false,
         tier: Tier.community,
-        instanceLimit: 1,
-        retentionLimits: TIER_RETENTION_LIMITS[Tier.community],
         expiresAt: null,
         error: 'License has been deactivated',
       };
@@ -42,8 +45,6 @@ export class EntitlementService {
       return {
         valid: false,
         tier: Tier.community,
-        instanceLimit: 1,
-        retentionLimits: TIER_RETENTION_LIMITS[Tier.community],
         expiresAt: license.expiresAt.toISOString(),
         error: 'License has expired',
       };
@@ -55,8 +56,6 @@ export class EntitlementService {
     return {
       valid: true,
       tier,
-      instanceLimit: license.instanceLimit,
-      retentionLimits: TIER_RETENTION_LIMITS[tier],
       expiresAt: license.expiresAt ? license.expiresAt.toISOString() : null,
       customer: {
         id: license.customer.id,

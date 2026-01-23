@@ -50,29 +50,10 @@ export const TIER_FEATURES: Record<Tier, Feature[]> = {
   [Tier.enterprise]: Object.values(Feature),
 };
 
-export const TIER_INSTANCE_LIMITS: Record<Tier, number> = {
-  [Tier.community]: 1,
-  [Tier.pro]: 10,
-  [Tier.enterprise]: Infinity,
-};
-
-export interface RetentionLimits {
-  dataRetentionDays: number;
-  aclRetentionHours: number;
-}
-
-export const TIER_RETENTION_LIMITS: Record<Tier, RetentionLimits> = {
-  [Tier.community]: { dataRetentionDays: 7, aclRetentionHours: 24 },
-  [Tier.pro]: { dataRetentionDays: 90, aclRetentionHours: 90 * 24 },
-  [Tier.enterprise]: { dataRetentionDays: 365, aclRetentionHours: 365 * 24 },
-};
-
 export interface EntitlementResponse {
   valid: boolean;
   tier: Tier;
   features?: Feature[]; // Optional - will be derived from tier if not provided
-  instanceLimit: number;
-  retentionLimits: RetentionLimits;
   expiresAt: string | null;
   customer?: {
     id: string;

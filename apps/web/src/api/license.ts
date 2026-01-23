@@ -1,12 +1,10 @@
 import { fetchApi } from './client';
-import type { Tier, Feature, RetentionLimits } from '@betterdb/shared';
+import type { Tier, Feature } from '@betterdb/shared';
 
 export interface LicenseStatus {
   tier: Tier;
   valid: boolean;
   features: Feature[];
-  instanceLimit: number;
-  retentionLimits: RetentionLimits;
   expiresAt: string | null;
   customer?: {
     name: string;

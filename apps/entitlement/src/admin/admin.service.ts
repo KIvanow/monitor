@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomBytes } from 'crypto';
-import { TIER_INSTANCE_LIMITS, isValidTier, Tier } from '@betterdb/shared';
+import { isValidTier, Tier } from '@betterdb/shared';
 
 @Injectable()
 export class AdminService {
@@ -145,7 +145,7 @@ export class AdminService {
   }
 
   private getDefaultInstanceLimit(tier: string): number {
-    const limit = TIER_INSTANCE_LIMITS[tier as keyof typeof TIER_INSTANCE_LIMITS];
-    return Number.isFinite(limit) ? limit : 1;
+    // No instance limits for self-hosted deployments
+    return 999999;
   }
 }

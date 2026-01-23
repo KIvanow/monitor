@@ -5,13 +5,11 @@ import { StoragePort, StoredAclEntry } from '../common/interfaces/storage-port.i
 import { AclLogEntry } from '../common/types/metrics.types';
 import { PrometheusService } from '../prometheus/prometheus.service';
 import { SettingsService } from '../settings/settings.service';
-import { RetentionService } from '@proprietary/license';
 
 @Injectable()
 export class AuditService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AuditService.name);
   private pollInterval: NodeJS.Timeout | null = null;
-  private cleanupInterval: NodeJS.Timeout | null = null;
   private lastSeenTimestamp: number = 0;
   private readonly sourceHost: string;
   private readonly sourcePort: number;
@@ -24,7 +22,6 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly prometheusService: PrometheusService,
     private readonly settingsService: SettingsService,
-    private readonly retentionService: RetentionService,
   ) {
     this.sourceHost = this.configService.get<string>('database.host', 'localhost');
     this.sourcePort = this.configService.get<number>('database.port', 6379);
@@ -44,19 +41,6 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
 
     await this.pollAclLog();
     this.startPolling();
-
-    this.cleanupInterval = setInterval(
-      () => {
-        this.cleanupOldEntries().catch((error) => {
-          this.logger.error(
-            `Failed to cleanup old entries: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          );
-        });
-      },
-      24 * 60 * 60 * 1000,
-    );
-
-    await this.cleanupOldEntries();
   }
 
   private startPolling(): void {
@@ -77,11 +61,6 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
-    }
-
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
     }
   }
 
@@ -145,19 +124,5 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   private deduplicateEntries(entries: AclLogEntry[]): AclLogEntry[] {
     // Filter entries that are newer than the last seen timestamp
     return entries.filter((entry) => entry.timestampLastUpdated > this.lastSeenTimestamp);
-  }
-
-  private async cleanupOldEntries(): Promise<void> {
-    try {
-      const cutoffTimestamp = Math.floor(this.retentionService.getAclRetentionCutoff().getTime() / 1000);
-      const deleted = await this.storageClient.pruneOldEntries(cutoffTimestamp);
-
-      if (deleted > 0) {
-        this.logger.log(`Cleaned up ${deleted} old audit entries`);
-      }
-    } catch (error) {
-      this.logger.error(`Error cleaning up old entries: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      throw error;
-    }
   }
 }

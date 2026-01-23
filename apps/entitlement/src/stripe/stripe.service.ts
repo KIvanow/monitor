@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { PrismaService } from '../prisma/prisma.service';
-import { Tier, SubscriptionStatus, TIER_INSTANCE_LIMITS } from '@betterdb/shared';
+import { Tier, SubscriptionStatus } from '@betterdb/shared';
 import { randomBytes } from 'crypto';
 
 const MAX_KEY_GENERATION_ATTEMPTS = 5;
@@ -84,14 +84,13 @@ export class StripeService {
     });
 
     const licenseKey = await this.generateUniqueLicenseKey();
-    const instanceLimit = TIER_INSTANCE_LIMITS[tier as keyof typeof TIER_INSTANCE_LIMITS] ?? 1;
 
     await this.prisma.license.create({
       data: {
         key: licenseKey,
         customerId: customer.id,
         tier,
-        instanceLimit: Number.isFinite(instanceLimit) ? instanceLimit : 9999,
+        instanceLimit: 999999, // No limits for self-hosted
         active: true,
       },
     });

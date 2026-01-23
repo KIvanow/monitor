@@ -15,8 +15,6 @@ export class LicenseController {
       tier: info.tier,
       valid: info.valid,
       features,
-      instanceLimit: info.instanceLimit,
-      retentionLimits: info.retentionLimits,
       expiresAt: info.expiresAt,
       customer: info.customer,
     };

@@ -9,14 +9,12 @@ import {
   ClientAnalyticsStats,
 } from '../common/interfaces/storage-port.interface';
 import { PrometheusService } from '../prometheus/prometheus.service';
-import { RetentionService } from '@proprietary/license';
 import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ClientAnalyticsService.name);
   private pollInterval: NodeJS.Timeout | null = null;
-  private cleanupInterval: NodeJS.Timeout | null = null;
   private isPolling = false;
 
   constructor(
@@ -24,7 +22,6 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
     @Inject('STORAGE_CLIENT') private storage: StoragePort,
     private configService: ConfigService,
     private prometheusService: PrometheusService,
-    private retention: RetentionService,
     private settingsService: SettingsService,
   ) {}
 
@@ -35,20 +32,10 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     this.logger.log(`Starting client analytics polling (interval: ${this.pollIntervalMs}ms)`);
     await this.startPolling();
-
-    await this.cleanup();
-    this.cleanupInterval = setInterval(
-      () => this.cleanup().catch((err) => this.logger.error('Client analytics cleanup failed:', err)),
-      24 * 60 * 60 * 1000,
-    );
   }
 
   onModuleDestroy(): void {
     this.stopPolling();
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
   }
 
   private async startPolling(): Promise<void> {
@@ -118,24 +105,15 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getSnapshots(options?: ClientSnapshotQueryOptions): Promise<StoredClientSnapshot[]> {
-    const retentionCutoff = this.retention.getDataRetentionCutoff().getTime();
-    const enforcedOptions = {
-      ...options,
-      startTime: Math.max(options?.startTime || 0, retentionCutoff),
-    };
-    return this.storage.getClientSnapshots(enforcedOptions);
+    return this.storage.getClientSnapshots(options);
   }
 
   async getTimeSeries(startTime: number, endTime: number, bucketSizeMs?: number): Promise<ClientTimeSeriesPoint[]> {
-    const retentionCutoff = this.retention.getDataRetentionCutoff().getTime();
-    const enforcedStartTime = Math.max(startTime, retentionCutoff);
-    return this.storage.getClientTimeSeries(enforcedStartTime, endTime, bucketSizeMs);
+    return this.storage.getClientTimeSeries(startTime, endTime, bucketSizeMs);
   }
 
   async getStats(startTime?: number, endTime?: number): Promise<ClientAnalyticsStats> {
-    const retentionCutoff = this.retention.getDataRetentionCutoff().getTime();
-    const enforcedStartTime = startTime ? Math.max(startTime, retentionCutoff) : retentionCutoff;
-    return this.storage.getClientAnalyticsStats(enforcedStartTime, endTime);
+    return this.storage.getClientAnalyticsStats(startTime, endTime);
   }
 
   async getConnectionHistory(
@@ -143,15 +121,6 @@ export class ClientAnalyticsService implements OnModuleInit, OnModuleDestroy {
     startTime?: number,
     endTime?: number,
   ): Promise<StoredClientSnapshot[]> {
-    const retentionCutoff = this.retention.getDataRetentionCutoff().getTime();
-    const enforcedStartTime = startTime ? Math.max(startTime, retentionCutoff) : retentionCutoff;
-    return this.storage.getClientConnectionHistory(identifier, enforcedStartTime, endTime);
-  }
-
-  async cleanup(): Promise<number> {
-    const cutoff = this.retention.getDataRetentionCutoff().getTime();
-    const pruned = await this.storage.pruneOldClientSnapshots(cutoff);
-    this.logger.log(`Pruned ${pruned} old client snapshots`);
-    return pruned;
+    return this.storage.getClientConnectionHistory(identifier, startTime, endTime);
   }
 }

@@ -2,6 +2,8 @@
 
 A monorepo application for monitoring Valkey/Redis databases with a NestJS backend and React frontend.
 
+BetterDB is built by [BetterDB Inc.](https://betterdb.com), a public benefit company operating under the [OCV Open Charter](https://github.com/OpenCoreVentures/ocv-public-benefit-company).
+
 ## Project Structure
 
 ```

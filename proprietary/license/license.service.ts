@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
-import { Tier, Feature, TIER_FEATURES, TIER_INSTANCE_LIMITS, TIER_RETENTION_LIMITS, EntitlementResponse } from './types';
+import { Tier, Feature, TIER_FEATURES, EntitlementResponse } from './types';
 
 interface CachedEntitlement {
   response: EntitlementResponse;
@@ -44,7 +44,7 @@ export class LicenseService implements OnModuleInit {
   async onModuleInit() {
     if (!this.licenseKey && this.telemetryEnabled) {
       // Community tier with telemetry enabled - send ping
-      this.pingTelemetry();
+      await this.pingTelemetry();
     }
     await this.validateLicense();
   }
@@ -132,21 +132,24 @@ export class LicenseService implements OnModuleInit {
         tier: 'community',
       };
 
+      this.logger.debug(`Sending telemetry ping: ${JSON.stringify(payload)}`);
+
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
 
       try {
-        await fetch(this.entitlementUrl, {
+        const response = await fetch(this.entitlementUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
           signal: controller.signal,
         });
+        this.logger.debug(`Telemetry ping response: ${response.status}`);
       } finally {
         clearTimeout(timeout);
       }
     } catch (error) {
-      // Silent catch - telemetry should never block or error out
+      this.logger.debug(`Telemetry ping failed: ${(error as Error).message}`);
     }
   }
 
@@ -154,8 +157,6 @@ export class LicenseService implements OnModuleInit {
     return {
       valid: !error,
       tier: Tier.community,
-      instanceLimit: TIER_INSTANCE_LIMITS[Tier.community],
-      retentionLimits: TIER_RETENTION_LIMITS[Tier.community],
       expiresAt: null,
       error,
     };

@@ -64,10 +64,7 @@ Yes! BetterDB automatically detects cluster mode and:
 
 ### Can I run multiple BetterDB instances?
 
-With a Pro or Enterprise license, you can monitor multiple databases:
-- Community: 1 instance
-- Pro: Up to 10 instances
-- Enterprise: Unlimited
+Yes! Self-hosted BetterDB has no instance limits. You can run as many BetterDB monitors as you need.
 
 ### Does BetterDB support high availability?
 

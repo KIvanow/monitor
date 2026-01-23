@@ -11,7 +11,6 @@ export function useLicense() {
     license,
     tier: license?.tier || 'community',
     hasFeature: (feature: Feature) => license?.features?.includes(feature) ?? false,
-    retentionLimits: license?.retentionLimits,
   };
 }
 

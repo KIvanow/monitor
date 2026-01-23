@@ -68,18 +68,13 @@ This document provides comprehensive configuration information for BetterDB Moni
 
 ### Data Retention
 
-Data retention is automatically managed based on your license tier:
+Self-hosted BetterDB has **no artificial data retention limits**. Your data retention is determined by:
 
-| Tier | Data Retention | ACL Audit Retention |
-|------|----------------|---------------------|
-| **Community** | 7 days | 24 hours |
-| **Pro** | 90 days | 90 days |
-| **Enterprise** | 365 days | 365 days |
+- Your storage backend capacity (PostgreSQL, SQLite, etc.)
+- Any cleanup jobs or policies you configure on your database
+- Available disk space
 
-**Note**: Retention periods cannot be configured via environment variables. They are determined by your active license tier. This applies to:
-- Client analytics snapshots
-- Anomaly detection events
-- ACL audit trail entries
+**BetterDB Cloud** (launching Q1 2026) will offer managed retention policies by tier.
 
 ### License Configuration
 

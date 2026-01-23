@@ -125,15 +125,6 @@ export class ClientAnalyticsController {
     );
   }
 
-  @Delete('cleanup')
-  @ApiOperation({ summary: 'Trigger manual cleanup', description: 'Manually trigger cleanup of old client snapshot data' })
-  @ApiResponse({ status: 200, description: 'Cleanup completed successfully', type: CleanupResponseDto })
-  @ApiResponse({ status: 500, description: 'Failed to cleanup' })
-  async cleanup(): Promise<{ pruned: number }> {
-    const pruned = await this.service.cleanup();
-    return { pruned };
-  }
-
   @Get('command-distribution')
   @ApiOperation({ summary: 'Get command distribution analysis', description: 'Returns command frequency distribution over a time range, grouped by client' })
   @ApiQuery({ name: 'startTime', required: false, description: 'Start timestamp (Unix milliseconds), default: 1 hour ago' })
