@@ -37,8 +37,10 @@ RUN pnpm --filter api --filter web --filter @betterdb/shared build
 # ============================================
 FROM node:25-alpine AS production
 
-# Only wget needed for healthcheck - no build tools!
-RUN apk add --no-cache wget
+# Install wget for healthcheck and tar (>=7.5.4) for security fix
+# Upgrade all packages to get latest security patches (including Go stdlib in binaries)
+RUN apk add --no-cache wget tar>=7.5.4 && \
+    apk upgrade --no-cache
 
 WORKDIR /app
 
