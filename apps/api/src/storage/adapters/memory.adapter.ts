@@ -672,11 +672,11 @@ export class MemoryAdapter implements StoragePort {
     return delivery ? { ...delivery } : null;
   }
 
-  async getDeliveriesByWebhook(webhookId: string, limit: number = 50): Promise<WebhookDelivery[]> {
+  async getDeliveriesByWebhook(webhookId: string, limit: number = 50, offset: number = 0): Promise<WebhookDelivery[]> {
     return Array.from(this.deliveries.values())
       .filter(d => d.webhookId === webhookId)
       .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, limit)
+      .slice(offset, offset + limit)
       .map(d => ({ ...d }));
   }
 

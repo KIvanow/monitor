@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { WebhooksService } from './webhooks.service';
 import { WebhookDispatcherService } from './webhook-dispatcher.service';
 import { WebhookProcessorService } from './webhook-processor.service';
@@ -34,9 +35,11 @@ export class WebhooksController {
   ) {}
 
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests per minute
   @ApiOperation({ summary: 'Create a new webhook' })
   @ApiResponse({ status: 201, description: 'Webhook created successfully', type: WebhookDto })
   @ApiResponse({ status: 400, description: 'Invalid webhook data' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
   async createWebhook(@Body() dto: CreateWebhookDto): Promise<WebhookDto> {
     const webhook = await this.webhooksService.createWebhook(dto);
     return this.webhooksService.redactSecret(webhook) as WebhookDto;
@@ -83,10 +86,12 @@ export class WebhooksController {
   }
 
   @Post(':id/test')
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests per minute
   @ApiOperation({ summary: 'Test a webhook by sending a test event' })
   @ApiParam({ name: 'id', description: 'Webhook ID' })
   @ApiResponse({ status: 200, description: 'Test result', type: TestWebhookResponseDto })
   @ApiResponse({ status: 404, description: 'Webhook not found' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
   async testWebhook(@Param('id') id: string): Promise<TestWebhookResponseDto> {
     const webhook = await this.webhooksService.getWebhook(id);
     return this.dispatcherService.testWebhook(webhook);
@@ -105,7 +110,8 @@ export class WebhooksController {
     await this.webhooksService.getWebhook(id);
 
     const limit = query.limit || 100;
-    return this.webhooksService.getDeliveries(id, limit) as Promise<WebhookDeliveryDto[]>;
+    const offset = query.offset || 0;
+    return this.webhooksService.getDeliveries(id, limit, offset) as Promise<WebhookDeliveryDto[]>;
   }
 
   @Get('deliveries/:deliveryId')
@@ -119,10 +125,13 @@ export class WebhooksController {
 
   @Post('deliveries/:deliveryId/retry')
   @HttpCode(HttpStatus.ACCEPTED)
+  @Throttle({ default: { limit: 20, ttl: 60000 } }) // 20 requests per minute
   @ApiOperation({ summary: 'Manually retry a failed delivery' })
   @ApiParam({ name: 'deliveryId', description: 'Delivery ID' })
   @ApiResponse({ status: 202, description: 'Retry queued' })
   @ApiResponse({ status: 404, description: 'Delivery not found' })
+  @ApiResponse({ status: 400, description: 'Cannot retry: max attempts reached or invalid status' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
   async retryDelivery(@Param('deliveryId') deliveryId: string): Promise<{ message: string }> {
     await this.processorService.manualRetry(deliveryId);
     return { message: 'Retry queued' };

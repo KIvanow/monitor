@@ -162,7 +162,7 @@ export interface StoragePort {
   // Webhook Delivery Methods
   createDelivery(delivery: Omit<WebhookDelivery, 'id' | 'createdAt'>): Promise<WebhookDelivery>;
   getDelivery(id: string): Promise<WebhookDelivery | null>;
-  getDeliveriesByWebhook(webhookId: string, limit?: number): Promise<WebhookDelivery[]>;
+  getDeliveriesByWebhook(webhookId: string, limit?: number, offset?: number): Promise<WebhookDelivery[]>;
   updateDelivery(id: string, updates: Partial<Omit<WebhookDelivery, 'id' | 'webhookId' | 'createdAt'>>): Promise<boolean>;
   getRetriableDeliveries(limit?: number): Promise<WebhookDelivery[]>;
   pruneOldDeliveries(cutoffTimestamp: number): Promise<number>;

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsUrl, IsBoolean, IsArray, IsObject, IsOptional, IsInt, Min, IsEnum } from 'class-validator';
+import { Transform } from 'class-transformer';
 import type {
   Webhook,
   WebhookDelivery,
@@ -8,6 +9,7 @@ import type {
   RetryPolicy,
   WebhookPayload
 } from '@betterdb/shared';
+import { WebhookEventType as EventTypeEnum } from '@betterdb/shared';
 
 /**
  * DTO for creating a new webhook
@@ -34,10 +36,11 @@ export class CreateWebhookDto {
   @ApiProperty({
     description: 'Events to subscribe to',
     example: ['instance.down', 'memory.critical'],
-    type: [String]
+    type: [String],
+    enum: EventTypeEnum,
   })
   @IsArray()
-  @IsString({ each: true })
+  @IsEnum(EventTypeEnum, { each: true, message: 'Each event must be a valid webhook event type' })
   events: WebhookEventType[];
 
   @ApiPropertyOptional({
@@ -84,10 +87,11 @@ export class UpdateWebhookDto {
   @ApiPropertyOptional({
     description: 'Events to subscribe to',
     example: ['instance.down', 'memory.critical'],
-    type: [String]
+    type: [String],
+    enum: EventTypeEnum,
   })
   @IsArray()
-  @IsString({ each: true })
+  @IsEnum(EventTypeEnum, { each: true, message: 'Each event must be a valid webhook event type' })
   @IsOptional()
   events?: WebhookEventType[];
 
@@ -209,12 +213,18 @@ export class GetDeliveriesQueryDto {
   @IsOptional()
   limit?: number;
 
+  @ApiPropertyOptional({ description: 'Number of deliveries to skip (for pagination)', example: 0, default: 0 })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  offset?: number;
+
   @ApiPropertyOptional({
     description: 'Delivery status to filter by',
-    enum: ['pending', 'success', 'failed', 'retrying'],
+    enum: ['pending', 'success', 'failed', 'retrying', 'dead_letter'],
     example: 'failed'
   })
-  @IsEnum(['pending', 'success', 'failed', 'retrying'])
+  @IsEnum(['pending', 'success', 'failed', 'retrying', 'dead_letter'])
   @IsOptional()
   status?: DeliveryStatus;
 }

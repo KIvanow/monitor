@@ -16,10 +16,7 @@ import { WebhooksController } from './webhooks.controller';
   ],
   controllers: [WebhooksController],
   exports: [
-    WebhooksService,
-    WebhookDispatcherService,
-    WebhookProcessorService,
-    WebhookHealthService,
+    WebhookDispatcherService, // Only export dispatcher for event monitors to use
   ],
 })
 export class WebhooksModule {}

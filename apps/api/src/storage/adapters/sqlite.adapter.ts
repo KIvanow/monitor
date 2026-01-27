@@ -1782,10 +1782,10 @@ export class SqliteAdapter implements StoragePort {
     };
   }
 
-  async getDeliveriesByWebhook(webhookId: string, limit: number = 50): Promise<WebhookDelivery[]> {
+  async getDeliveriesByWebhook(webhookId: string, limit: number = 50, offset: number = 0): Promise<WebhookDelivery[]> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const rows = this.db.prepare('SELECT * FROM webhook_deliveries WHERE webhook_id = ? ORDER BY created_at DESC LIMIT ?').all(webhookId, limit) as any[];
+    const rows = this.db.prepare('SELECT * FROM webhook_deliveries WHERE webhook_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?').all(webhookId, limit, offset) as any[];
 
     return rows.map(row => ({
       id: row.id,

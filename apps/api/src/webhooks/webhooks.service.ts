@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomBytes, createHmac } from 'crypto';
+import { promises as dns } from 'dns';
 import type { Webhook, WebhookDelivery, WebhookEventType, DEFAULT_RETRY_POLICY } from '@betterdb/shared';
 import { StoragePort } from '../common/interfaces/storage-port.interface';
 import { CreateWebhookDto, UpdateWebhookDto } from '../common/dto/webhook.dto';
@@ -25,15 +26,32 @@ export class WebhooksService {
   ) {}
 
   /**
+   * Check if an IP address is blocked
+   */
+  private isBlockedIp(ip: string): boolean {
+    for (const pattern of this.BLOCKED_IP_PATTERNS) {
+      if (pattern.test(ip)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Validate webhook URL for SSRF protection
    */
-  private validateUrl(url: string): void {
+  private async validateUrl(url: string): Promise<void> {
     try {
       const parsed = new URL(url);
 
       // Only allow http and https
       if (!['http:', 'https:'].includes(parsed.protocol)) {
         throw new BadRequestException('Only HTTP and HTTPS protocols are allowed');
+      }
+
+      // Warn if URL contains credentials
+      if (parsed.username || parsed.password) {
+        this.logger.warn(`Webhook URL contains credentials, consider using custom headers instead: ${parsed.hostname}`);
       }
 
       // Allow localhost in development/non-production environments
@@ -54,16 +72,33 @@ export class WebhooksService {
         throw new BadRequestException('Cannot use localhost or 0.0.0.0 as webhook URL in production');
       }
 
-      // Block private IP ranges
-      for (const pattern of this.BLOCKED_IP_PATTERNS) {
-        if (pattern.test(parsed.hostname)) {
-          throw new BadRequestException('Cannot use private IP addresses as webhook URL');
-        }
+      // Check if hostname is already an IP
+      if (this.isBlockedIp(parsed.hostname)) {
+        throw new BadRequestException('Cannot use private IP addresses as webhook URL');
       }
 
       // Additional checks for common bypass attempts
       if (parsed.hostname.includes('127.') || parsed.hostname.includes('localhost')) {
         throw new BadRequestException('Suspicious hostname detected');
+      }
+
+      // DNS resolution to prevent DNS rebinding attacks
+      if (isProduction) {
+        try {
+          const addresses = await dns.resolve(parsed.hostname);
+          for (const addr of addresses) {
+            if (this.isBlockedIp(addr)) {
+              throw new BadRequestException(`Webhook URL resolves to blocked IP address: ${addr}`);
+            }
+          }
+        } catch (dnsError: any) {
+          // If DNS resolution fails, it might be unreachable but not necessarily malicious
+          if (dnsError instanceof BadRequestException) {
+            throw dnsError;
+          }
+          this.logger.warn(`Failed to resolve DNS for webhook URL: ${parsed.hostname}`);
+          throw new BadRequestException('Failed to resolve webhook URL hostname');
+        }
       }
 
     } catch (error) {
@@ -103,7 +138,7 @@ export class WebhooksService {
    */
   async createWebhook(dto: CreateWebhookDto): Promise<Webhook> {
     // Validate URL for SSRF
-    this.validateUrl(dto.url);
+    await this.validateUrl(dto.url);
 
     // Generate secret if not provided
     const secret = dto.secret || this.generateSecret();
@@ -177,7 +212,7 @@ export class WebhooksService {
   async updateWebhook(id: string, dto: UpdateWebhookDto): Promise<Webhook> {
     // Validate URL if provided
     if (dto.url) {
-      this.validateUrl(dto.url);
+      await this.validateUrl(dto.url);
     }
 
     const updated = await this.storageClient.updateWebhook(id, dto);
@@ -204,8 +239,8 @@ export class WebhooksService {
   /**
    * Get webhook deliveries
    */
-  async getDeliveries(webhookId: string, limit: number = 100): Promise<WebhookDelivery[]> {
-    return this.storageClient.getDeliveriesByWebhook(webhookId, limit);
+  async getDeliveries(webhookId: string, limit: number = 100, offset: number = 0): Promise<WebhookDelivery[]> {
+    return this.storageClient.getDeliveriesByWebhook(webhookId, limit, offset);
   }
 
   /**

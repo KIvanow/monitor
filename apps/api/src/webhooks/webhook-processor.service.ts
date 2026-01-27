@@ -9,9 +9,36 @@ import { WebhookDispatcherService } from './webhook-dispatcher.service';
 export class WebhookProcessorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WebhookProcessorService.name);
   private retryInterval: NodeJS.Timeout | null = null;
-  private readonly RETRY_CHECK_INTERVAL_MS = 10000; // Check every 10 seconds
+
+  // Retry processing configuration
+  // 10 second interval: Balances responsiveness vs. database load
+  // - Fast enough for most retry delays (1s, 2s, 4s initial backoff)
+  // - Slow enough to avoid constant polling overhead
+  // - TODO: Consider adaptive polling (faster when retries pending)
+  private readonly RETRY_CHECK_INTERVAL_MS = 10_000;
+
+  // Max 10 concurrent retries: Prevents overwhelming downstream webhooks
+  // - Limits parallel HTTP requests to avoid socket exhaustion
+  // - Limits concurrent database writes for delivery updates
+  // - Prevents memory pressure from many in-flight requests
+  // - Scale this up for high-throughput deployments (50-100)
   private readonly MAX_CONCURRENT_RETRIES = 10;
+
+  // Graceful shutdown timeout (30 seconds)
+  // Allows in-flight webhook deliveries to complete before forcing shutdown
+  // - Most webhooks timeout at 30s, so this matches typical max duration
+  // - Prevents data loss (delivery records get marked failed on interrupt)
+  private readonly GRACEFUL_SHUTDOWN_TIMEOUT_MS = 30_000;
+
+  // Shutdown polling interval (100ms)
+  // How often to check if active retries completed during graceful shutdown
+  // - 100ms is responsive enough (users won't notice)
+  // - Light enough to not add significant CPU load during shutdown
+  private readonly SHUTDOWN_CHECK_INTERVAL_MS = 100;
+
   private isProcessing = false;
+  private activeRetries = 0;
+  private shutdownPromise: Promise<void> | null = null;
 
   constructor(
     @Inject('STORAGE_CLIENT') private readonly storageClient: StoragePort,
@@ -24,9 +51,32 @@ export class WebhookProcessorService implements OnModuleInit, OnModuleDestroy {
     this.startRetryProcessor();
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy() {
     this.logger.log('Stopping webhook processor service');
     this.stopRetryProcessor();
+
+    // Gracefully wait for active retries to complete
+    if (this.activeRetries > 0) {
+      this.logger.log(`Waiting for ${this.activeRetries} active retries to complete...`);
+      this.shutdownPromise = new Promise((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (this.activeRetries === 0) {
+            clearInterval(checkInterval);
+            this.logger.log('All active retries completed');
+            resolve();
+          }
+        }, this.SHUTDOWN_CHECK_INTERVAL_MS);
+
+        // Timeout after configured duration
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          this.logger.warn(`Forced shutdown with ${this.activeRetries} active retries remaining`);
+          resolve();
+        }, this.GRACEFUL_SHUTDOWN_TIMEOUT_MS);
+      });
+
+      await this.shutdownPromise;
+    }
   }
 
   /**
@@ -96,6 +146,7 @@ export class WebhookProcessorService implements OnModuleInit, OnModuleDestroy {
    * Retry a single delivery
    */
   private async retryDelivery(delivery: WebhookDelivery): Promise<void> {
+    this.activeRetries++;
     try {
       this.logger.debug(
         `Retrying delivery ${delivery.id} (attempt ${delivery.attempts + 1})`
@@ -129,6 +180,8 @@ export class WebhookProcessorService implements OnModuleInit, OnModuleDestroy {
       }).catch(updateError => {
         this.logger.error(`Failed to update delivery ${delivery.id}:`, updateError);
       });
+    } finally {
+      this.activeRetries--;
     }
   }
 
@@ -146,13 +199,23 @@ export class WebhookProcessorService implements OnModuleInit, OnModuleDestroy {
       throw new Error('Cannot retry successful delivery');
     }
 
+    // Get webhook to check retry policy
+    const webhook = await this.webhooksService.getWebhook(delivery.webhookId);
+
+    // Check if max retries already exceeded
+    if (delivery.attempts >= webhook.retryPolicy.maxRetries) {
+      throw new Error(
+        `Cannot retry: max attempts reached (${delivery.attempts}/${webhook.retryPolicy.maxRetries})`
+      );
+    }
+
     // Reset delivery for retry
     await this.storageClient.updateDelivery(deliveryId, {
       status: DeliveryStatus.RETRYING,
       nextRetryAt: Date.now(),
     });
 
-    this.logger.log(`Manual retry queued for delivery ${deliveryId}`);
+    this.logger.log(`Manual retry queued for delivery ${deliveryId} (attempt ${delivery.attempts + 1}/${webhook.retryPolicy.maxRetries})`);
 
     // Trigger immediate processing
     await this.retryDelivery(delivery);

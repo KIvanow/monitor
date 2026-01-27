@@ -19,9 +19,40 @@ interface WebhookHealthMetrics {
 export class WebhookHealthService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WebhookHealthService.name);
   private healthCheckInterval: NodeJS.Timeout | null = null;
-  private readonly HEALTH_CHECK_INTERVAL_MS = 300000; // 5 minutes
-  private readonly UNHEALTHY_THRESHOLD = 0.5; // 50% success rate
-  private readonly CONSECUTIVE_FAILURES_THRESHOLD = 5;
+
+  // Health check interval (5 minutes)
+  // Balances proactive monitoring vs. database/CPU overhead
+  // - 5 minutes is frequent enough to catch issues quickly
+  // - Infrequent enough to not burden database with constant queries
+  // - For 1000 webhooks, this is 1000 queries every 5 minutes = 3.3 QPS (acceptable)
+  private readonly HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+  // Unhealthy success rate threshold (50%)
+  // Webhooks with <50% success rate are considered unhealthy
+  // - 50% is conservative (catches clearly broken webhooks)
+  // - Prevents false positives from transient issues (one-off failures OK)
+  // - Combined with consecutive failures for more aggressive detection
+  private readonly UNHEALTHY_SUCCESS_RATE_THRESHOLD = 0.5;
+
+  // Consecutive failures threshold (5 failures)
+  // Webhooks with 5+ consecutive failures are considered unhealthy (even if historical success rate >50%)
+  // - 5 consecutive = likely persistent issue, not transient network blip
+  // - Catches newly-broken webhooks faster than success rate alone
+  // - Example: 95 successes, then 5 failures = 95% success rate but still unhealthy
+  private readonly UNHEALTHY_CONSECUTIVE_FAILURES_THRESHOLD = 5;
+
+  // Sample size for health check (100 deliveries)
+  // Only considers last 100 deliveries per webhook for health calculation
+  // - 100 is statistically significant for success rate (±10% margin of error at 95% CI)
+  // - Keeps query performance reasonable (indexed query with LIMIT 100)
+  // - Recent deliveries more relevant than ancient history
+  private readonly HEALTH_CHECK_SAMPLE_SIZE = 100;
+
+  // Auto-disable unhealthy webhooks
+  // When true, automatically disables webhooks that fail health checks
+  // - Prevents resource waste on persistently failing webhooks
+  // - Reduces noise in logs from repeated failures
+  // - Users can manually re-enable after fixing their endpoint
   private readonly AUTO_DISABLE_ENABLED = true;
 
   constructor(
@@ -103,8 +134,11 @@ export class WebhookHealthService implements OnModuleInit, OnModuleDestroy {
    */
   async checkWebhookHealth(webhook: Webhook): Promise<WebhookHealthMetrics> {
     try {
-      // Get recent deliveries (last 100)
-      const deliveries = await this.storageClient.getDeliveriesByWebhook(webhook.id, 100);
+      // Get recent deliveries for health assessment
+      const deliveries = await this.storageClient.getDeliveriesByWebhook(
+        webhook.id,
+        this.HEALTH_CHECK_SAMPLE_SIZE
+      );
 
       if (deliveries.length === 0) {
         return {
@@ -129,8 +163,8 @@ export class WebhookHealthService implements OnModuleInit, OnModuleDestroy {
 
       // Determine health status
       const isHealthy =
-        successRate >= this.UNHEALTHY_THRESHOLD &&
-        consecutiveFailures < this.CONSECUTIVE_FAILURES_THRESHOLD;
+        successRate >= this.UNHEALTHY_SUCCESS_RATE_THRESHOLD &&
+        consecutiveFailures < this.UNHEALTHY_CONSECUTIVE_FAILURES_THRESHOLD;
 
       const lastDeliveryAt = deliveries[0]?.createdAt;
 

@@ -905,7 +905,7 @@ export class PostgresAdapter implements StoragePort {
       );
 
       CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
-      CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry ON webhook_deliveries(next_retry_at) WHERE status = 'retrying';
+      CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry ON webhook_deliveries(status, next_retry_at) WHERE status = 'retrying';
     `);
   }
 
@@ -1727,8 +1727,8 @@ export class PostgresAdapter implements StoragePort {
         delivery.statusCode || null,
         delivery.responseBody || null,
         delivery.attempts,
-        delivery.nextRetryAt ? delivery.nextRetryAt : null,
-        delivery.completedAt ? delivery.completedAt : null,
+        delivery.nextRetryAt ? new Date(delivery.nextRetryAt) : null,
+        delivery.completedAt ? new Date(delivery.completedAt) : null,
         delivery.durationMs || null,
       ]
     );
@@ -1773,12 +1773,12 @@ export class PostgresAdapter implements StoragePort {
     };
   }
 
-  async getDeliveriesByWebhook(webhookId: string, limit: number = 50): Promise<WebhookDelivery[]> {
+  async getDeliveriesByWebhook(webhookId: string, limit: number = 50, offset: number = 0): Promise<WebhookDelivery[]> {
     if (!this.pool) throw new Error('Database not initialized');
 
     const result = await this.pool.query(
-      'SELECT * FROM webhook_deliveries WHERE webhook_id = $1 ORDER BY created_at DESC LIMIT $2',
-      [webhookId, limit]
+      'SELECT * FROM webhook_deliveries WHERE webhook_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+      [webhookId, limit, offset]
     );
 
     return result.rows.map(row => ({
@@ -1822,11 +1822,11 @@ export class PostgresAdapter implements StoragePort {
     }
     if (updates.nextRetryAt !== undefined) {
       setClauses.push(`next_retry_at = $${paramIndex++}`);
-      params.push(updates.nextRetryAt || null);
+      params.push(updates.nextRetryAt ? new Date(updates.nextRetryAt) : null);
     }
     if (updates.completedAt !== undefined) {
       setClauses.push(`completed_at = $${paramIndex++}`);
-      params.push(updates.completedAt || null);
+      params.push(updates.completedAt ? new Date(updates.completedAt) : null);
     }
     if (updates.durationMs !== undefined) {
       setClauses.push(`duration_ms = $${paramIndex++}`);
@@ -1850,9 +1850,11 @@ export class PostgresAdapter implements StoragePort {
 
     const result = await this.pool.query(
       `SELECT * FROM webhook_deliveries
-       WHERE status = 'retrying' AND next_retry_at <= NOW()
+       WHERE status = 'retrying'
+       AND next_retry_at <= EXTRACT(EPOCH FROM NOW()) * 1000
        ORDER BY next_retry_at ASC
-       LIMIT $1`,
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED`,
       [limit]
     );
 
