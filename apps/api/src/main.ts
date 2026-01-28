@@ -59,9 +59,17 @@ async function bootstrap(): Promise<void> {
       reply.type('text/html').send(indexHtml);
     });
   } else {
-    // Development mode - enable CORS
+    // Development mode - enable CORS for any localhost port
     app.enableCors({
-      origin: 'http://localhost:5173',
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
+        // Allow any localhost origin
+        if (origin.match(/^http:\/\/localhost:\d+$/)) {
+          return callback(null, true);
+        }
+        callback(new Error('Not allowed by CORS'), false);
+      },
       credentials: true,
     });
   }

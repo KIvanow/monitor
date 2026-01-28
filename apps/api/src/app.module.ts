@@ -7,6 +7,8 @@ import { HealthModule } from './health/health.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { AuditModule } from './audit/audit.module';
 import { ClientAnalyticsModule } from './client-analytics/client-analytics.module';
+import { SlowLogAnalyticsModule } from './slowlog-analytics/slowlog-analytics.module';
+import { CommandLogAnalyticsModule } from './commandlog-analytics/commandlog-analytics.module';
 import { PrometheusModule } from './prometheus/prometheus.module';
 import { SettingsModule } from './settings/settings.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -68,6 +70,8 @@ const baseImports = [
   MetricsModule,
   AuditModule,
   ClientAnalyticsModule,
+  SlowLogAnalyticsModule,
+  CommandLogAnalyticsModule,
   PrometheusModule,
   SettingsModule,
   WebhooksModule,

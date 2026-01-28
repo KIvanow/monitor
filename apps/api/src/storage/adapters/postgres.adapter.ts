@@ -21,6 +21,11 @@ import {
   WebhookDelivery,
   WebhookEventType,
   DeliveryStatus,
+  StoredSlowLogEntry,
+  SlowLogQueryOptions,
+  StoredCommandLogEntry,
+  CommandLogQueryOptions,
+  CommandLogType,
 } from '../../common/interfaces/storage-port.interface';
 
 export interface PostgresAdapterConfig {
@@ -906,6 +911,49 @@ export class PostgresAdapter implements StoragePort {
 
       CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
       CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry ON webhook_deliveries(status, next_retry_at) WHERE status = 'retrying';
+
+      -- Slow Log Entries Table
+      CREATE TABLE IF NOT EXISTS slow_log_entries (
+        pk SERIAL PRIMARY KEY,
+        slowlog_id BIGINT NOT NULL,
+        timestamp BIGINT NOT NULL,
+        duration BIGINT NOT NULL,
+        command TEXT[] NOT NULL DEFAULT '{}',
+        client_address TEXT,
+        client_name TEXT,
+        captured_at BIGINT NOT NULL,
+        source_host TEXT NOT NULL,
+        source_port INTEGER NOT NULL,
+        UNIQUE(slowlog_id, source_host, source_port)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_slowlog_timestamp ON slow_log_entries(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_slowlog_command ON slow_log_entries(command);
+      CREATE INDEX IF NOT EXISTS idx_slowlog_duration ON slow_log_entries(duration DESC);
+      CREATE INDEX IF NOT EXISTS idx_slowlog_client_name ON slow_log_entries(client_name);
+      CREATE INDEX IF NOT EXISTS idx_slowlog_captured_at ON slow_log_entries(captured_at DESC);
+
+      -- Command Log Entries Table (Valkey-specific)
+      CREATE TABLE IF NOT EXISTS command_log_entries (
+        pk SERIAL PRIMARY KEY,
+        commandlog_id BIGINT NOT NULL,
+        timestamp BIGINT NOT NULL,
+        duration BIGINT NOT NULL,
+        command TEXT[] NOT NULL DEFAULT '{}',
+        client_address TEXT,
+        client_name TEXT,
+        log_type TEXT NOT NULL,
+        captured_at BIGINT NOT NULL,
+        source_host TEXT NOT NULL,
+        source_port INTEGER NOT NULL,
+        UNIQUE(commandlog_id, log_type, source_host, source_port)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_commandlog_timestamp ON command_log_entries(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_commandlog_type ON command_log_entries(log_type);
+      CREATE INDEX IF NOT EXISTS idx_commandlog_duration ON command_log_entries(duration DESC);
+      CREATE INDEX IF NOT EXISTS idx_commandlog_client_name ON command_log_entries(client_name);
+      CREATE INDEX IF NOT EXISTS idx_commandlog_captured_at ON command_log_entries(captured_at DESC);
     `);
   }
 
@@ -1879,6 +1927,247 @@ export class PostgresAdapter implements StoragePort {
 
     const result = await this.pool.query(
       'DELETE FROM webhook_deliveries WHERE EXTRACT(EPOCH FROM created_at) * 1000 < $1',
+      [cutoffTimestamp]
+    );
+
+    return result.rowCount ?? 0;
+  }
+
+  // Slow Log Methods
+  async saveSlowLogEntries(entries: StoredSlowLogEntry[]): Promise<number> {
+    if (!this.pool || entries.length === 0) return 0;
+
+    const values: any[] = [];
+    const placeholders: string[] = [];
+    let paramIndex = 1;
+
+    for (const entry of entries) {
+      placeholders.push(`(
+        $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++},
+        $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}
+      )`);
+      values.push(
+        entry.id,
+        entry.timestamp,
+        entry.duration,
+        entry.command,  // PostgreSQL will accept string[] for TEXT[]
+        entry.clientAddress || '',
+        entry.clientName || '',
+        entry.capturedAt,
+        entry.sourceHost,
+        entry.sourcePort,
+      );
+    }
+
+    const query = `
+      INSERT INTO slow_log_entries (
+        slowlog_id, timestamp, duration, command,
+        client_address, client_name, captured_at, source_host, source_port
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (slowlog_id, source_host, source_port) DO NOTHING
+    `;
+
+    const result = await this.pool.query(query, values);
+    return result.rowCount ?? 0;
+  }
+
+  async getSlowLogEntries(options: SlowLogQueryOptions = {}): Promise<StoredSlowLogEntry[]> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (options.startTime) {
+      conditions.push(`timestamp >= $${paramIndex++}`);
+      params.push(options.startTime);
+    }
+    if (options.endTime) {
+      conditions.push(`timestamp <= $${paramIndex++}`);
+      params.push(options.endTime);
+    }
+    if (options.command) {
+      // Search in the first element of command array (the command name)
+      conditions.push(`command[1] ILIKE $${paramIndex++}`);
+      params.push(`%${options.command}%`);
+    }
+    if (options.clientName) {
+      conditions.push(`client_name ILIKE $${paramIndex++}`);
+      params.push(`%${options.clientName}%`);
+    }
+    if (options.minDuration) {
+      conditions.push(`duration >= $${paramIndex++}`);
+      params.push(options.minDuration);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 100;
+    const offset = options.offset ?? 0;
+
+    const result = await this.pool.query(
+      `SELECT
+        slowlog_id, timestamp, duration, command,
+        client_address, client_name, captured_at, source_host, source_port
+      FROM slow_log_entries
+      ${whereClause}
+      ORDER BY timestamp DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
+      [...params, limit, offset]
+    );
+
+    return result.rows.map(row => ({
+      id: parseInt(row.slowlog_id),
+      timestamp: parseInt(row.timestamp),
+      duration: parseInt(row.duration),
+      command: row.command || [],
+      clientAddress: row.client_address,
+      clientName: row.client_name,
+      capturedAt: parseInt(row.captured_at),
+      sourceHost: row.source_host,
+      sourcePort: row.source_port,
+    }));
+  }
+
+  async getLatestSlowLogId(): Promise<number | null> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const result = await this.pool.query(
+      'SELECT MAX(slowlog_id) as max_id FROM slow_log_entries'
+    );
+
+    const maxId = result.rows[0]?.max_id;
+    return maxId !== null && maxId !== undefined ? Number(maxId) : null;
+  }
+
+  async pruneOldSlowLogEntries(cutoffTimestamp: number): Promise<number> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const result = await this.pool.query(
+      'DELETE FROM slow_log_entries WHERE captured_at < $1',
+      [cutoffTimestamp]
+    );
+
+    return result.rowCount ?? 0;
+  }
+
+  // Command Log Methods (Valkey-specific)
+  async saveCommandLogEntries(entries: StoredCommandLogEntry[]): Promise<number> {
+    if (!this.pool || entries.length === 0) return 0;
+
+    const values: any[] = [];
+    const placeholders: string[] = [];
+    let paramIndex = 1;
+
+    for (const entry of entries) {
+      placeholders.push(`(
+        $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++},
+        $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++},
+        $${paramIndex++}, $${paramIndex++}
+      )`);
+      values.push(
+        entry.id,
+        entry.timestamp,
+        entry.duration,
+        entry.command,
+        entry.clientAddress || '',
+        entry.clientName || '',
+        entry.type,
+        entry.capturedAt,
+        entry.sourceHost,
+        entry.sourcePort,
+      );
+    }
+
+    const query = `
+      INSERT INTO command_log_entries (
+        commandlog_id, timestamp, duration, command,
+        client_address, client_name, log_type, captured_at, source_host, source_port
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (commandlog_id, log_type, source_host, source_port) DO NOTHING
+    `;
+
+    const result = await this.pool.query(query, values);
+    return result.rowCount ?? 0;
+  }
+
+  async getCommandLogEntries(options: CommandLogQueryOptions = {}): Promise<StoredCommandLogEntry[]> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (options.startTime) {
+      conditions.push(`timestamp >= $${paramIndex++}`);
+      params.push(options.startTime);
+    }
+    if (options.endTime) {
+      conditions.push(`timestamp <= $${paramIndex++}`);
+      params.push(options.endTime);
+    }
+    if (options.command) {
+      conditions.push(`command[1] ILIKE $${paramIndex++}`);
+      params.push(`%${options.command}%`);
+    }
+    if (options.clientName) {
+      conditions.push(`client_name ILIKE $${paramIndex++}`);
+      params.push(`%${options.clientName}%`);
+    }
+    if (options.type) {
+      conditions.push(`log_type = $${paramIndex++}`);
+      params.push(options.type);
+    }
+    if (options.minDuration) {
+      conditions.push(`duration >= $${paramIndex++}`);
+      params.push(options.minDuration);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 100;
+    const offset = options.offset ?? 0;
+
+    const result = await this.pool.query(
+      `SELECT
+        commandlog_id, timestamp, duration, command,
+        client_address, client_name, log_type, captured_at, source_host, source_port
+      FROM command_log_entries
+      ${whereClause}
+      ORDER BY timestamp DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
+      [...params, limit, offset]
+    );
+
+    return result.rows.map(row => ({
+      id: parseInt(row.commandlog_id),
+      timestamp: parseInt(row.timestamp),
+      duration: parseInt(row.duration),
+      command: row.command || [],
+      clientAddress: row.client_address,
+      clientName: row.client_name,
+      type: row.log_type as CommandLogType,
+      capturedAt: parseInt(row.captured_at),
+      sourceHost: row.source_host,
+      sourcePort: row.source_port,
+    }));
+  }
+
+  async getLatestCommandLogId(type: CommandLogType): Promise<number | null> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const result = await this.pool.query(
+      'SELECT MAX(commandlog_id) as max_id FROM command_log_entries WHERE log_type = $1',
+      [type]
+    );
+
+    const maxId = result.rows[0]?.max_id;
+    return maxId !== null && maxId !== undefined ? Number(maxId) : null;
+  }
+
+  async pruneOldCommandLogEntries(cutoffTimestamp: number): Promise<number> {
+    if (!this.pool) throw new Error('Database not initialized');
+
+    const result = await this.pool.query(
+      'DELETE FROM command_log_entries WHERE captured_at < $1',
       [cutoffTimestamp]
     );
 

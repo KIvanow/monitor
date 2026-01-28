@@ -4,8 +4,9 @@ import { Registry, Gauge, Counter, Histogram, collectDefaultMetrics } from 'prom
 import { WebhookEventType, IWebhookEventsProService, IWebhookEventsEnterpriseService } from '@betterdb/shared';
 import { StoragePort } from '../common/interfaces/storage-port.interface';
 import { DatabasePort } from '../common/interfaces/database-port.interface';
-import { analyzeSlowLogPatterns } from '../metrics/slowlog-analyzer';
 import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
+import { SlowLogAnalyticsService } from '../slowlog-analytics/slowlog-analytics.service';
+import { CommandLogAnalyticsService } from '../commandlog-analytics/commandlog-analytics.service';
 
 // Note: WebhookEventsProService and WebhookEventsEnterpriseService are injected via DI
 // when proprietary module is available. Interfaces provide type safety for optional injection.
@@ -128,6 +129,8 @@ export class PrometheusService implements OnModuleInit, OnModuleDestroy {
     @Inject('STORAGE_CLIENT') private storage: StoragePort,
     @Inject('DATABASE_CLIENT') private dbClient: DatabasePort,
     private readonly configService: ConfigService,
+    private readonly slowLogAnalytics: SlowLogAnalyticsService,
+    private readonly commandLogAnalytics: CommandLogAnalyticsService,
     @Optional() private readonly webhookDispatcher?: WebhookDispatcherService,
     @Optional() private readonly webhookEventsProService?: IWebhookEventsProService,
     @Optional() private readonly webhookEventsEnterpriseService?: IWebhookEventsEnterpriseService,
@@ -647,13 +650,17 @@ export class PrometheusService implements OnModuleInit, OnModuleDestroy {
 
   private async updateSlowlogMetrics(): Promise<void> {
     try {
-      const entries = await this.dbClient.getSlowLog(128);
-      const analysis = analyzeSlowLogPatterns(entries);
+      // Use cached data from SlowLogAnalyticsService (avoids duplicate Valkey calls)
+      const analysis = this.slowLogAnalytics.getCachedAnalysis();
 
       // Reset all pattern metrics
       this.slowlogPatternCount.reset();
       this.slowlogPatternDuration.reset();
       this.slowlogPatternPercentage.reset();
+
+      if (!analysis) {
+        return; // No data yet from analytics service
+      }
 
       // Update with top patterns
       for (const p of analysis.patterns) {
@@ -668,32 +675,34 @@ export class PrometheusService implements OnModuleInit, OnModuleDestroy {
 
   private async updateCommandlogMetrics(): Promise<void> {
     try {
-      const capabilities = this.dbClient.getCapabilities();
-      if (!capabilities.hasCommandLog) {
+      // Use cached data from CommandLogAnalyticsService (avoids duplicate Valkey calls)
+      if (!this.commandLogAnalytics.hasCommandLogSupport()) {
         return;
       }
 
       // Update large request patterns
-      const largeRequests = await this.dbClient.getCommandLog(128, 'large-request');
-      const requestAnalysis = analyzeSlowLogPatterns(largeRequests as any);
+      const requestAnalysis = this.commandLogAnalytics.getCachedAnalysis('large-request');
 
       this.commandlogLargeRequestByPattern.reset();
       let requestTotal = 0;
-      for (const p of requestAnalysis.patterns) {
-        this.commandlogLargeRequestByPattern.labels(p.pattern).set(p.count);
-        requestTotal += p.count;
+      if (requestAnalysis) {
+        for (const p of requestAnalysis.patterns) {
+          this.commandlogLargeRequestByPattern.labels(p.pattern).set(p.count);
+          requestTotal += p.count;
+        }
       }
       this.commandlogLargeRequestCount.set(requestTotal);
 
       // Update large reply patterns
-      const largeReplies = await this.dbClient.getCommandLog(128, 'large-reply');
-      const replyAnalysis = analyzeSlowLogPatterns(largeReplies as any);
+      const replyAnalysis = this.commandLogAnalytics.getCachedAnalysis('large-reply');
 
       this.commandlogLargeReplyByPattern.reset();
       let replyTotal = 0;
-      for (const p of replyAnalysis.patterns) {
-        this.commandlogLargeReplyByPattern.labels(p.pattern).set(p.count);
-        replyTotal += p.count;
+      if (replyAnalysis) {
+        for (const p of replyAnalysis.patterns) {
+          this.commandlogLargeReplyByPattern.labels(p.pattern).set(p.count);
+          replyTotal += p.count;
+        }
       }
       this.commandlogLargeReplyCount.set(replyTotal);
     } catch (error) {
@@ -703,12 +712,14 @@ export class PrometheusService implements OnModuleInit, OnModuleDestroy {
 
   private async updateSlowlogRawMetrics(): Promise<void> {
     try {
-      const length = await this.dbClient.getSlowLogLength();
+      // Use analytics service for length (lightweight SLOWLOG LEN call)
+      const length = await this.slowLogAnalytics.getSlowLogLength();
       this.slowlogLength.set(length);
 
-      const entries = await this.dbClient.getSlowLog(1);
-      if (entries.length > 0) {
-        this.slowlogLastId.set(entries[0].id);
+      // Use cached lastSeenId from analytics service (no extra Valkey call)
+      const lastId = this.slowLogAnalytics.getLastSeenId();
+      if (lastId !== null) {
+        this.slowlogLastId.set(lastId);
       }
 
       // Webhook dispatch for slowlog.threshold (Pro tier - handled by proprietary service)

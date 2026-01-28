@@ -26,6 +26,11 @@ import {
   WebhookDelivery,
   WebhookEventType,
   DeliveryStatus,
+  StoredSlowLogEntry,
+  SlowLogQueryOptions,
+  StoredCommandLogEntry,
+  CommandLogQueryOptions,
+  CommandLogType,
 } from '../../common/interfaces/storage-port.interface';
 
 export interface SqliteAdapterConfig {
@@ -934,6 +939,26 @@ export class SqliteAdapter implements StoragePort {
 
       CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
       CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry ON webhook_deliveries(next_retry_at) WHERE status = 'retrying';
+
+      CREATE TABLE IF NOT EXISTS slow_log_entries (
+        pk INTEGER PRIMARY KEY AUTOINCREMENT,
+        slowlog_id INTEGER NOT NULL,
+        timestamp INTEGER NOT NULL,
+        duration INTEGER NOT NULL,
+        command TEXT NOT NULL DEFAULT '[]',
+        client_address TEXT,
+        client_name TEXT,
+        captured_at INTEGER NOT NULL,
+        source_host TEXT NOT NULL,
+        source_port INTEGER NOT NULL,
+        UNIQUE(slowlog_id, source_host, source_port)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_slowlog_timestamp ON slow_log_entries(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_slowlog_command ON slow_log_entries(command);
+      CREATE INDEX IF NOT EXISTS idx_slowlog_duration ON slow_log_entries(duration DESC);
+      CREATE INDEX IF NOT EXISTS idx_slowlog_client_name ON slow_log_entries(client_name);
+      CREATE INDEX IF NOT EXISTS idx_slowlog_captured_at ON slow_log_entries(captured_at DESC);
     `);
   }
 
@@ -1880,5 +1905,123 @@ export class SqliteAdapter implements StoragePort {
 
     const result = this.db.prepare('DELETE FROM webhook_deliveries WHERE created_at < ?').run(cutoffTimestamp);
     return result.changes;
+  }
+
+  // Slow Log Methods
+  async saveSlowLogEntries(entries: StoredSlowLogEntry[]): Promise<number> {
+    if (!this.db || entries.length === 0) return 0;
+
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO slow_log_entries (
+        slowlog_id, timestamp, duration, command,
+        client_address, client_name, captured_at, source_host, source_port
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let count = 0;
+    const transaction = this.db.transaction(() => {
+      for (const entry of entries) {
+        const result = stmt.run(
+          entry.id,
+          entry.timestamp,
+          entry.duration,
+          JSON.stringify(entry.command),  // Store as JSON string
+          entry.clientAddress || '',
+          entry.clientName || '',
+          entry.capturedAt,
+          entry.sourceHost,
+          entry.sourcePort,
+        );
+        count += result.changes;
+      }
+    });
+    transaction();
+
+    return count;
+  }
+
+  async getSlowLogEntries(options: SlowLogQueryOptions = {}): Promise<StoredSlowLogEntry[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (options.startTime) {
+      conditions.push('timestamp >= ?');
+      params.push(options.startTime);
+    }
+    if (options.endTime) {
+      conditions.push('timestamp <= ?');
+      params.push(options.endTime);
+    }
+    if (options.command) {
+      conditions.push('command LIKE ?');
+      params.push(`%${options.command}%`);
+    }
+    if (options.clientName) {
+      conditions.push('client_name LIKE ?');
+      params.push(`%${options.clientName}%`);
+    }
+    if (options.minDuration) {
+      conditions.push('duration >= ?');
+      params.push(options.minDuration);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 100;
+    const offset = options.offset ?? 0;
+
+    const rows = this.db.prepare(
+      `SELECT slowlog_id, timestamp, duration, command,
+              client_address, client_name, captured_at, source_host, source_port
+       FROM slow_log_entries
+       ${whereClause}
+       ORDER BY timestamp DESC
+       LIMIT ? OFFSET ?`
+    ).all(...params, limit, offset) as any[];
+
+    return rows.map(row => ({
+      id: row.slowlog_id,
+      timestamp: row.timestamp,
+      duration: row.duration,
+      command: JSON.parse(row.command || '[]'),  // Parse JSON string back to array
+      clientAddress: row.client_address,
+      clientName: row.client_name,
+      capturedAt: row.captured_at,
+      sourceHost: row.source_host,
+      sourcePort: row.source_port,
+    }));
+  }
+
+  async getLatestSlowLogId(): Promise<number | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const row = this.db.prepare('SELECT MAX(slowlog_id) as max_id FROM slow_log_entries').get() as any;
+    return row?.max_id ?? null;
+  }
+
+  async pruneOldSlowLogEntries(cutoffTimestamp: number): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = this.db.prepare('DELETE FROM slow_log_entries WHERE captured_at < ?').run(cutoffTimestamp);
+    return result.changes;
+  }
+
+  // Command Log Methods (stub implementations for SQLite)
+  async saveCommandLogEntries(entries: StoredCommandLogEntry[]): Promise<number> {
+    // SQLite not used for command log persistence in this implementation
+    return 0;
+  }
+
+  async getCommandLogEntries(options: CommandLogQueryOptions = {}): Promise<StoredCommandLogEntry[]> {
+    return [];
+  }
+
+  async getLatestCommandLogId(type: CommandLogType): Promise<number | null> {
+    return null;
+  }
+
+  async pruneOldCommandLogEntries(cutoffTimestamp: number): Promise<number> {
+    return 0;
   }
 }

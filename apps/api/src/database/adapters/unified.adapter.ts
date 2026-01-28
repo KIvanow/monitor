@@ -141,9 +141,30 @@ export class UnifiedDatabaseAdapter implements DatabasePort {
     return MetricsParser.parseInfoToTyped(info);
   }
 
-  async getSlowLog(count: number = 10): Promise<SlowLogEntry[]> {
-    const rawLog = await this.client.slowlog('GET', count);
-    return MetricsParser.parseSlowLog(rawLog as unknown[]);
+  async getSlowLog(
+    count: number = 10,
+    excludeClientName?: string,
+    startTime?: number,
+    endTime?: number,
+  ): Promise<SlowLogEntry[]> {
+    // Fetch more entries if filtering to ensure we return enough results
+    const fetchCount = (excludeClientName || startTime || endTime) ? count * 5 : count;
+    const rawLog = await this.client.slowlog('GET', fetchCount);
+    let entries = MetricsParser.parseSlowLog(rawLog as unknown[]);
+
+    // Filter out entries from specified client (e.g., monitor's own commands)
+    if (excludeClientName) {
+      entries = entries.filter(entry => entry.clientName !== excludeClientName);
+    }
+
+    if (startTime) {
+      entries = entries.filter(entry => entry.timestamp >= startTime);
+    }
+    if (endTime) {
+      entries = entries.filter(entry => entry.timestamp <= endTime);
+    }
+
+    return entries.slice(0, count);
   }
 
   async getSlowLogLength(): Promise<number> {

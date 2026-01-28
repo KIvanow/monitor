@@ -21,6 +21,11 @@ import {
   WebhookDelivery,
   WebhookEventType,
   DeliveryStatus,
+  StoredSlowLogEntry,
+  SlowLogQueryOptions,
+  StoredCommandLogEntry,
+  CommandLogQueryOptions,
+  CommandLogType,
 } from '../../common/interfaces/storage-port.interface';
 
 export class MemoryAdapter implements StoragePort {
@@ -28,6 +33,8 @@ export class MemoryAdapter implements StoragePort {
   private clientSnapshots: StoredClientSnapshot[] = [];
   private anomalyEvents: StoredAnomalyEvent[] = [];
   private correlatedGroups: StoredCorrelatedGroup[] = [];
+  private slowLogEntries: StoredSlowLogEntry[] = [];
+  private commandLogEntries: StoredCommandLogEntry[] = [];
   private settings: AppSettings | null = null;
   private webhooks: Map<string, Webhook> = new Map();
   private deliveries: Map<string, WebhookDelivery> = new Map();
@@ -715,5 +722,115 @@ export class MemoryAdapter implements StoragePort {
       .filter(([_, d]) => d.createdAt < cutoffTimestamp)
       .forEach(([id]) => this.deliveries.delete(id));
     return before - this.deliveries.size;
+  }
+
+  // Slow Log Methods
+  async saveSlowLogEntries(entries: StoredSlowLogEntry[]): Promise<number> {
+    let savedCount = 0;
+    for (const entry of entries) {
+      // Check for duplicates based on unique constraint
+      const exists = this.slowLogEntries.some(
+        e => e.id === entry.id && e.sourceHost === entry.sourceHost && e.sourcePort === entry.sourcePort
+      );
+      if (!exists) {
+        this.slowLogEntries.push(entry);
+        savedCount++;
+      }
+    }
+    return savedCount;
+  }
+
+  async getSlowLogEntries(options: SlowLogQueryOptions = {}): Promise<StoredSlowLogEntry[]> {
+    let filtered = [...this.slowLogEntries];
+
+    if (options.startTime) {
+      filtered = filtered.filter(e => e.timestamp >= options.startTime!);
+    }
+    if (options.endTime) {
+      filtered = filtered.filter(e => e.timestamp <= options.endTime!);
+    }
+    if (options.command) {
+      const cmd = options.command.toLowerCase();
+      // command is an array, check if the first element (command name) matches
+      filtered = filtered.filter(e => e.command[0]?.toLowerCase().includes(cmd));
+    }
+    if (options.clientName) {
+      const name = options.clientName.toLowerCase();
+      filtered = filtered.filter(e => e.clientName.toLowerCase().includes(name));
+    }
+    if (options.minDuration) {
+      filtered = filtered.filter(e => e.duration >= options.minDuration!);
+    }
+
+    return filtered
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(options.offset ?? 0, (options.offset ?? 0) + (options.limit ?? 100));
+  }
+
+  async getLatestSlowLogId(): Promise<number | null> {
+    if (this.slowLogEntries.length === 0) return null;
+    return Math.max(...this.slowLogEntries.map(e => e.id));
+  }
+
+  async pruneOldSlowLogEntries(cutoffTimestamp: number): Promise<number> {
+    const before = this.slowLogEntries.length;
+    this.slowLogEntries = this.slowLogEntries.filter(e => e.capturedAt >= cutoffTimestamp);
+    return before - this.slowLogEntries.length;
+  }
+
+  // Command Log Methods
+  async saveCommandLogEntries(entries: StoredCommandLogEntry[]): Promise<number> {
+    let savedCount = 0;
+    for (const entry of entries) {
+      const exists = this.commandLogEntries.some(
+        e => e.id === entry.id && e.type === entry.type && e.sourceHost === entry.sourceHost && e.sourcePort === entry.sourcePort
+      );
+      if (!exists) {
+        this.commandLogEntries.push(entry);
+        savedCount++;
+      }
+    }
+    return savedCount;
+  }
+
+  async getCommandLogEntries(options: CommandLogQueryOptions = {}): Promise<StoredCommandLogEntry[]> {
+    let filtered = [...this.commandLogEntries];
+
+    if (options.startTime) {
+      filtered = filtered.filter(e => e.timestamp >= options.startTime!);
+    }
+    if (options.endTime) {
+      filtered = filtered.filter(e => e.timestamp <= options.endTime!);
+    }
+    if (options.command) {
+      const cmd = options.command.toLowerCase();
+      filtered = filtered.filter(e => e.command[0]?.toLowerCase().includes(cmd));
+    }
+    if (options.clientName) {
+      const name = options.clientName.toLowerCase();
+      filtered = filtered.filter(e => e.clientName.toLowerCase().includes(name));
+    }
+    if (options.type) {
+      filtered = filtered.filter(e => e.type === options.type);
+    }
+    if (options.minDuration) {
+      filtered = filtered.filter(e => e.duration >= options.minDuration!);
+    }
+
+    return filtered
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(options.offset ?? 0, (options.offset ?? 0) + (options.limit ?? 100));
+  }
+
+  async getLatestCommandLogId(type: CommandLogType): Promise<number | null> {
+    const entriesOfType = this.commandLogEntries.filter(e => e.type === type);
+    if (entriesOfType.length === 0) return null;
+    return Math.max(...entriesOfType.map(e => e.id));
+  }
+
+  async pruneOldCommandLogEntries(cutoffTimestamp: number): Promise<number> {
+    const before = this.commandLogEntries.length;
+    this.commandLogEntries = this.commandLogEntries.filter(e => e.capturedAt >= cutoffTimestamp);
+    return before - this.commandLogEntries.length;
   }
 }
